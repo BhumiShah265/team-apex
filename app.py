@@ -738,6 +738,7 @@ if st.session_state.get('show_city_selector', False):
             st.session_state['auto_lon'] = gps['lon']
             st.session_state['location_detected'] = True
             st.session_state['location_source'] = 'manual'
+            st.session_state['gps_coords_debug'] = "Manual Selection"
             st.session_state['show_city_selector'] = False
             st.success(f"✅ Location set to **{selected_city_val}**")
             st.rerun()
@@ -1312,7 +1313,6 @@ with tab_dash:
                 st.session_state.dash_loc_perm = False
                 st.rerun()
         with c2:
-            # Use a custom HTML button to preserve the user gesture for browser GPS
             st.markdown(f"""
                 <button onclick="window.triggerGPS()" style="
                     width: 100%;
@@ -1328,9 +1328,13 @@ with tab_dash:
                     {t.get("allow", "Allow")}
                 </button>
             """, unsafe_allow_html=True)
-            # We still need a way to track if they "allowed" in session state even if GPS fails
-            # But triggerGPS will reload the page with params if successful.
-            # If they just close it or it fails, we fall back to IP.
+        
+        # Add a "Manual" option if detection fails or isn't desired
+        st.write("---")
+        if st.button(f"🏢 {t.get('select_manually', 'Select Manually')}", use_container_width=True):
+            st.session_state.dash_loc_perm = True # Grant viewing perm
+            st.session_state.show_city_selector = True # Open selector
+            st.rerun()
 
     if st.session_state.dash_loc_perm is None and not _modal_open_in_this_run:
         request_dashboard_permission()
