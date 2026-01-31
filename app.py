@@ -2230,8 +2230,8 @@ with tab_chat:
                                 if transcribed_text and not transcribed_text.startswith("Error"):
                                     st.session_state.chat_messages.append({"role": "user", "content": transcribed_text.strip()})
                                     st.session_state.voice_interaction = True
-                                    # Mark this specific audio file as processed
-                                    st.session_state.last_processed_audio_id = audio_id
+                                    # Clear the audio input to reset the widget
+                                    st.session_state.mic_fixed = None
                                     st.rerun()
                                 elif transcribed_text.startswith("Error"):
                                     st.error(transcribed_text)
