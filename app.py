@@ -436,6 +436,38 @@ update_translations()
 # AUTO-DETECT USER LOCATION (Before UI Render)
 # ==========================================
 
+# 0. INJECT HIDDEN GPS REQUESTER (Runs in background)
+# Only run if we don't have browser GPS yet
+if st.session_state.get('location_source') != 'browser':
+    components.html(
+    """
+    <script>
+    function getExactLocation() {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    const lat = pos.coords.latitude;
+                    const lon = pos.coords.longitude;
+                    // Only reload if we have a valid fix
+                    if (lat && lon) {
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('browser_lat', lat);
+                        url.searchParams.set('browser_lon', lon);
+                        window.location.href = url.toString();
+                    }
+                },
+                (err) => { console.log("GPS Denied/Error", err); },
+                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+            );
+        }
+    }
+    // Run immediately
+    getExactLocation();
+    </script>
+    """,
+    height=0, width=0
+    )
+
 # 1. Handle Browser GPS Params (Prioritized)
 browser_lat = st.query_params.get("browser_lat")
 browser_lon = st.query_params.get("browser_lon")
