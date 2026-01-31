@@ -103,27 +103,31 @@ def diagnose():
         image_data = base64.b64decode(image_b64)
         image = Image.open(BytesIO(image_data))
         
-        # Run AI diagnosis
-        diagnosis = predict_disease(image)
+        # Run AI diagnosis using Cloud Engine (Gemini)
+        # Convert PIL image back to bytes for the function
+        img_byte_arr = BytesIO()
+        image.save(img_byte_arr, format='JPEG')
+        diagnosis = analyze_crop_image(img_byte_arr.getvalue())
         
-        # Get weather context
+        # Get weather context for fusion
         weather_data = {
             "temp": context.get("temp", 30),
             "humidity": context.get("humidity", 60),
             "description": "Clear"
         }
         
-        # Get fusion advice
-        fusion = get_fusion_advice(diagnosis, weather_data)
-        
-        return jsonify({
-            "disease": diagnosis.get("disease", "Unknown"),
-            "confidence": f"{diagnosis.get('confidence', 0):.1f}%",
-            "severity": fusion.get("urgency", "Medium"),
-            "treatment": fusion.get("treatment_advice", []),
-            "prevention": "Monitor crops regularly and maintain proper irrigation.",
-            "fusionFactor": fusion.get("fusion_factor", "Standard analysis completed")
-        })
+        # Get fusion advice if diagnosis was successful
+        if not diagnosis.get("error"):
+            return jsonify({
+                "disease": diagnosis.get("disease", "Unknown"),
+                "confidence": diagnosis.get("confidence", "Medium"),
+                "severity": diagnosis.get("severity", "Medium"),
+                "treatment": diagnosis.get("treatment", []),
+                "prevention": diagnosis.get("prevention", "Monitor crops regularly."),
+                "fusionFactor": "Analyzed via Gemini Vision Cloud Engine"
+            })
+        else:
+            raise Exception(diagnosis.get("disease", "AI Error"))
         
     except Exception as e:
         return jsonify({
