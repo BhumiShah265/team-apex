@@ -2117,7 +2117,7 @@ with tab_chat:
                 # Render pending audio for autoplay inside the container so it's associated with the flow
                 if st.session_state.pending_audio:
                     if len(st.session_state.pending_audio) > 1000:
-                        st.audio(st.session_state.pending_audio, autoplay=True)
+                        st.audio(st.session_state.pending_audio, autoplay=True, loop=False)
                         st.toast("Audio response ready", icon="📢")
                     st.session_state.pending_audio = None
 
