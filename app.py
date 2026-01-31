@@ -1462,56 +1462,73 @@ with tab_diag:
                     </div>
                 """, unsafe_allow_html=True)
 
-                # THE RUN BUTTON (Inside the box)
+                # ==========================================
+                # 🧠 SMART DIAGNOSIS LOGIC (Gemini First)
+                # ==========================================
                 if st.button(t.get('run_ai_diagnosis', '🔬 Run AI Diagnosis'), use_container_width=True, type="primary"):
-                    with st.spinner(t.get('ai_analysis', '🔬 Running AI Analysis...')):
-                        image_data = st.session_state.uploaded_image
-                        image = Image.open(image_data)
-                        
-                        # Use Gemini/OpenRouter API for image analysis
-                        img_bytes = image_data.getvalue()
-                        ctx = {"crop_history": st.session_state.crop_history}
-                        gemini_result = analyze_crop_image(img_bytes, st.session_state.language, ctx)
-                        
-                        # Convert Gemini result to expected format
-                        if not gemini_result.get('error', False):
-                            # Parse confidence from string to numeric
-                            conf_str = gemini_result.get('confidence', 'Medium')
-                            conf_map = {"Very High": 95, "High": 85, "Medium": 70, "Low": 50}
-                            conf_numeric = conf_map.get(conf_str, 75)
+                    image_data = st.session_state.uploaded_image
+                    image = Image.open(image_data)
+                    
+                    # 2. Force Gemini API Call
+                    with st.spinner("🤖 Asking Gemini AI (Online Mode)..."):
+                        # We try Gemini FIRST. We do not touch TFLite yet.
+                        try:
+                            from gemini_engine import analyze_crop_image
                             
-                            diagnosis = {
-                                "disease": gemini_result.get('disease', 'Unknown'),
-                                "confidence": conf_numeric,
-                                "severity": gemini_result.get('severity', 'Medium'),
-                                "all_predictions": [(gemini_result.get('disease', 'Unknown'), conf_numeric)],
-                                "is_mock": False,
-                                "gemini_raw": gemini_result  # Store full result
-                            }
+                            # This calls the API
+                            img_bytes = image_data.getvalue()
+                            ctx = {"crop_history": st.session_state.crop_history}
+                            gemini_result = analyze_crop_image(img_bytes, st.session_state.language, ctx)
                             
-                            # Get weather fusion from live data
-                            if coords:
-                                weather_fusion = get_live_weather(coords["lat"], coords["lon"])
+                            # Check if Gemini actually returned a result
+                            if gemini_result and gemini_result.get('class') != "Unknown":
+                                st.success("✅ Analysis Complete (via Gemini AI)")
+                                
+                                # Convert Gemini result to expected format
+                                conf_str = gemini_result.get('confidence', 'Medium')
+                                conf_map = {"Very High": 95, "High": 85, "Medium": 70, "Low": 50}
+                                conf_numeric = conf_map.get(conf_str, 75)
+                                
+                                treatment = gemini_result.get('treatment', [])
+                                prevention = gemini_result.get('prevention', [])
+                                
+                                diagnosis = {
+                                    "disease": gemini_result.get('disease', 'Unknown'),
+                                    "confidence": conf_numeric,
+                                    "severity": gemini_result.get('severity', 'Medium'),
+                                    "all_predictions": [(gemini_result.get('disease', 'Unknown'), conf_numeric)],
+                                    "is_mock": False,
+                                    "gemini_raw": gemini_result
+                                }
+                                
+                                fusion_advice = {
+                                    "enhanced_confidence": conf_numeric,
+                                    "fusion_factor": f"AI Analysis via Gemini Vision",
+                                    "treatment_advice": treatment,
+                                    "urgency": "High" if gemini_result.get('severity') in ['Severe', 'Critical'] else "Medium",
+                                    "prevention": prevention
+                                }
+                                
+                                st.session_state['diagnosis'] = diagnosis
+                                st.session_state['fusion_advice'] = fusion_advice
+                                
+                                # Display Results
+                                st.markdown(f"### 🌿 Disease: **{gemini_result.get('disease', 'Unknown')}**")
+                                st.markdown(f"**Confidence:** {conf_numeric}%")
+                                st.markdown(f"**Treatment:** {gemini_result.get('treatment', ['Consult an expert.'])}")
+                                
                             else:
-                                weather_fusion = {"temp": 30, "humidity": 60}
+                                # If Gemini returns empty/error, ONLY THEN use TFLite
+                                raise Exception("Gemini returned no data")
+
+                        except Exception as e:
+                            st.error(f"⚠️ Gemini Connection Failed: {e}")
+                            st.warning("⚠️ Switching to Offline Emergency Backup (TFLite)...")
                             
-                            # Enhanced fusion with Gemini analysis
-                            treatment = gemini_result.get('treatment', [])
-                            prevention = gemini_result.get('prevention', [])
-                            
-                            fusion_advice = {
-                                "enhanced_confidence": conf_numeric,
-                                "fusion_factor": f"AI Analysis via Gemini Vision",
-                                "treatment_advice": treatment,
-                                "urgency": "High" if gemini_result.get('severity') in ['Severe', 'Critical'] else "Medium",
-                                "prevention": prevention
-                            }
-                            
-                            st.session_state['diagnosis'] = diagnosis
-                            st.session_state['fusion_advice'] = fusion_advice
-                        else:
-                            # Fallback to MobileNetV2 if Gemini fails
+                            # --- FALLBACK: TFLITE ---
+                            from ai_engine import predict_disease
                             diagnosis = predict_disease(image)
+                            
                             if coords:
                                 weather_fusion = get_live_weather(coords["lat"], coords["lon"])
                             else:
@@ -1521,7 +1538,8 @@ with tab_diag:
                             st.session_state['diagnosis'] = diagnosis
                             st.session_state['fusion_advice'] = fusion_advice
                             
-                    st.success(t.get('analysis_complete', 'Analysis Complete!'))
+                            st.markdown(f"### 🩺 Diagnosis: {diagnosis.get('disease', 'Unknown')}")
+                            st.caption("Result from Offline Backup Model")
         
     with diag_col_r:
         st.markdown(f"### {t.get('diagnosis_result', 'Diagnosis Result')}")
