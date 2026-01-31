@@ -112,6 +112,13 @@ def apply_modern_theme():
     .stat-val { font-size: 2.5rem; font-weight: 800; color: var(--text-primary); letter-spacing: -1px; }
     .stat-label { color: var(--text-secondary); font-size: 0.85rem; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
 
+    /* Ensure JS iframes are not hidden */
+    iframe {
+        opacity: 1 !important;
+        height: auto !important;
+        min-height: 0px !important;
+    }
+
     .stTabs [data-baseweb="tab-list"] { 
         gap: 4px !important; 
         background: rgba(255,255,255,0.03); 
