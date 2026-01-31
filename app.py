@@ -446,6 +446,7 @@ if browser_lat and browser_lon:
         st.session_state['auto_lon'] = lon
         st.session_state['location_detected'] = True
         st.session_state['location_source'] = 'browser'
+        st.session_state['dash_loc_perm'] = True # Automatically grant permission if GPS is used
         
         # Clear params to prevent reload loop
         st.query_params.pop("browser_lat", None)
@@ -563,6 +564,11 @@ window.triggerGPS = function() {
 };
 </script>
 """, unsafe_allow_html=True)
+
+# --- AUTOMATED GPS TRIGGER (After Permission Allow) ---
+if st.session_state.get('trigger_gps_automated'):
+    st.session_state.trigger_gps_automated = False
+    st.markdown("<script>setTimeout(() => { if(window.triggerGPS) window.triggerGPS(); }, 100);</script>", unsafe_allow_html=True)
 
 # App Title Header & Profile
 col_brand, col_profile = st.columns([0.9, 0.1])
@@ -1303,6 +1309,7 @@ with tab_dash:
         with c2:
             if st.button(t.get("allow", "Allow"), type="primary", use_container_width=True):
                 st.session_state.dash_loc_perm = True
+                st.session_state.trigger_gps_automated = True # Signal to run JS on next render
                 st.rerun()
 
     if st.session_state.dash_loc_perm is None and not _modal_open_in_this_run:
