@@ -47,6 +47,8 @@ def init_farm_db():
             pesticide TEXT,
             unusual TEXT,
             duration TEXT,
+            lat REAL,
+            lon REAL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -61,6 +63,8 @@ def init_farm_db():
             planting_date TEXT,
             chlorophyll TEXT,
             health_status TEXT,
+            lat REAL,
+            lon REAL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -77,6 +81,18 @@ def migrate_farm_db():
         cursor.execute("SELECT chlorophyll FROM farm_crops LIMIT 1")
     except:
         cursor.execute("ALTER TABLE farm_crops ADD COLUMN chlorophyll TEXT")
+    
+    # Add lat/lon to farm_crops
+    for col in ["lat", "lon"]:
+        try:
+            cursor.execute(f"ALTER TABLE farm_crops ADD COLUMN {col} REAL")
+        except: pass
+
+    # Add lat/lon to crop_history
+    for col in ["lat", "lon"]:
+        try:
+            cursor.execute(f"ALTER TABLE crop_history ADD COLUMN {col} REAL")
+        except: pass
     
     try:
         cursor.execute("ALTER TABLE farms ADD COLUMN farm_number TEXT")
@@ -171,10 +187,11 @@ def save_user_crop(user_id, crop_data):
     cursor = conn.cursor()
     try:
         cursor.execute('''
-            INSERT INTO farm_crops (user_id, crop_name, area, planting_date, chlorophyll, health_status)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO farm_crops (user_id, crop_name, area, planting_date, chlorophyll, health_status, lat, lon)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (user_id, crop_data['name'], crop_data['area'], crop_data['date'], 
-              crop_data.get('chlorophyll', 'Optimal'), crop_data.get('health', 'Healthy')))
+              crop_data.get('chlorophyll', 'Optimal'), crop_data.get('health', 'Healthy'),
+              crop_data.get('lat'), crop_data.get('lon')))
         conn.commit()
         return True
     except Exception as e:
@@ -190,9 +207,10 @@ def update_user_crop(crop_id, crop_data):
     try:
         cursor.execute('''
             UPDATE farm_crops 
-            SET crop_name = ?, area = ?, planting_date = ?
+            SET crop_name = ?, area = ?, planting_date = ?, lat = ?, lon = ?
             WHERE id = ?
-        ''', (crop_data['name'], crop_data['area'], crop_data['date'], crop_id))
+        ''', (crop_data['name'], crop_data['area'], crop_data['date'], 
+              crop_data.get('lat'), crop_data.get('lon'), crop_id))
         conn.commit()
         return True
     except Exception as e:
@@ -223,9 +241,10 @@ def save_history_record(user_id, user_email, entry):
     cursor = conn.cursor()
     try:
         cursor.execute('''
-            INSERT INTO crop_history (user_id, user_email, record_date, crop_name, disease, pesticide, unusual, duration)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, user_email, entry['date'], entry['crop'], entry['disease'], entry['pesticide'], entry['unusual'], entry['duration']))
+            INSERT INTO crop_history (user_id, user_email, record_date, crop_name, disease, pesticide, unusual, duration, lat, lon)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, user_email, entry['date'], entry['crop'], entry['disease'], entry['pesticide'], 
+              entry['unusual'], entry['duration'], entry.get('lat'), entry.get('lon')))
         conn.commit()
         return True
     except Exception as e:
@@ -247,3 +266,41 @@ def get_history_records(user_id):
     conn.close()
     
     return [dict(row) for row in rows]
+
+def get_regional_disease_stats(lat, lon, radius_km=10):
+    """
+    Find common diseases in the given radius from crop_history and farm_crops.
+    """
+    if lat is None or lon is None:
+        return []
+        
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # We use a simple bounding box first for performance, then filter if needed.
+    # 1 degree lat is approx 111km. 10km is ~0.09 degrees.
+    offset = radius_km / 111.0
+    
+    stats = []
+    
+    # Check farm_crops (active issues)
+    cursor.execute("""
+        SELECT crop_name, health_status as disease, created_at 
+        FROM farm_crops 
+        WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?
+        AND health_status != 'Healthy' AND health_status != 'Optimal'
+    """, (lat - offset, lat + offset, lon - offset, lon + offset))
+    stats.extend([dict(row) for row in cursor.fetchall()])
+    
+    # Check crop_history (past issues)
+    cursor.execute("""
+        SELECT crop_name, disease, record_date as created_at 
+        FROM crop_history 
+        WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?
+        AND disease != 'None' AND disease != 'Healthy'
+    """, (lat - offset, lat + offset, lon - offset, lon + offset))
+    stats.extend([dict(row) for row in cursor.fetchall()])
+    
+    conn.close()
+    return stats

@@ -100,12 +100,29 @@ Rules:
     if context_data:
         system_prompt += f"\n\nCONTEXT: Location: {context_data.get('city')}, Crop: {context_data.get('crop')}, Weather: {context_data.get('temp')}°C"
         
-        history = context_data.get('crop_history')
-        if history:
-            hist_str = "\n\nCROP HISTORY LOGS:\n"
-            for h in history[-3:]: # Last 3 logs
-                hist_str += f"- Crop: {h.get('crop')}, Past Disease: {h.get('disease')}, Pesticides: {h.get('pesticide')}, Unusual: {h.get('unusual')}, First Fruit: {h.get('duration')}\n"
+        # 1. Full User History
+        full_hist = context_data.get('full_history')
+        if full_hist:
+            hist_str = "\n\nYOUR FARM HISTORY (Past Records):\n"
+            for h in full_hist[:10]: # Analyze up to 10 past records
+                hist_str += f"- {h.get('record_date')}: {h.get('crop_name')} had {h.get('disease')}. Treated with {h.get('pesticide')}.\n"
             system_prompt += hist_str
+
+        # 2. Regional Context (10km Radius)
+        regional = context_data.get('regional_stats')
+        if regional:
+            reg_str = "\n\nREGIONAL DISEASE DATA (10km Radius):\n"
+            # Summarize regional data
+            disease_counts = {}
+            for r in regional:
+                d_name = r.get('disease')
+                disease_counts[d_name] = disease_counts.get(d_name, 0) + 1
+            
+            for d_name, count in disease_counts.items():
+                reg_str += f"- {d_name} found in {count} nearby farms recently.\n"
+            
+            system_prompt += reg_str
+            system_prompt += "\nCompare user's questions with this regional data. Mention if a disease is 'locally common' or 'spreading in their area' vs 'something new'."
 
     messages = [
         {"role": "system", "content": system_prompt},

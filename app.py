@@ -23,7 +23,11 @@ from data_utils import (
     GUJARAT_CITIES, GUJARAT_CROPS, VEHICLE_TYPES
 )
 from utils.auth_db import login_user, register_user, update_password, generate_otp, verify_otp, check_email_exists, update_user_notifications
-from utils.farm_db import init_farm_db, get_farm, save_farm, save_history_record, get_history_records, get_user_crops, save_user_crop, delete_user_crop
+from utils.farm_db import (
+    init_farm_db, migrate_farm_db, get_farm, save_farm, 
+    save_history_record, get_history_records, get_user_crops, 
+    save_user_crop, delete_user_crop, get_regional_disease_stats
+)
 from utils.email_utils import send_otp_email, send_alert_notification
 from utils.sms_utils import send_sms_otp
 from utils.pdf_gen import generate_farm_report
@@ -31,6 +35,7 @@ from utils.pdf_gen import generate_farm_report
 # Initialize Farm DB
 try:
     init_farm_db()
+    migrate_farm_db()
 except Exception:
     pass
 
@@ -1691,7 +1696,9 @@ with tab_diag:
                             "disease": d.get('disease', 'Unknown'),
                             "pesticide": ", ".join(f.get('treatment_advice', [])[:2]), # Save first few treatments
                             "unusual": f"AI diagnosis: {f.get('urgency', 'Medium')} severity.",
-                            "duration": "Diagnosed via AI"
+                            "duration": "Diagnosed via AI",
+                            "lat": st.session_state.get('auto_lat'),
+                            "lon": st.session_state.get('auto_lon')
                         }
                         if save_history_record(st.session_state.user_profile['id'], st.session_state.user_profile['email'], hist_entry):
                             st.toast(t.get('history_saved', 'History Logged!'), icon="✅")
@@ -2197,6 +2204,17 @@ with tab_chat:
                                         "crop": crop_list,
                                         "user_farm": user_farm
                                     })
+                                    
+                                    # Add full crop history for better analysis
+                                    full_history = get_history_records(st.session_state.user_profile['id'])
+                                    context["full_history"] = full_history
+                                    
+                                    # Add regional context (10km radius)
+                                    u_lat = st.session_state.get('auto_lat')
+                                    u_lon = st.session_state.get('auto_lon')
+                                    if u_lat and u_lon:
+                                        regional_stats = get_regional_disease_stats(u_lat, u_lon, radius_km=10)
+                                        context["regional_stats"] = regional_stats
 
                                 reply = chat_with_krishi_mitra(user_msg, st.session_state.language, context)
                                 st.write(reply)
@@ -2776,7 +2794,9 @@ with tab_hist:
                         "disease": h_disease,
                         "pesticide": h_pesticide,
                         "unusual": h_unusual,
-                        "duration": h_duration
+                        "duration": h_duration,
+                        "lat": st.session_state.get('auto_lat'),
+                        "lon": st.session_state.get('auto_lon')
                     }
                     if save_history_record(st.session_state.user_profile['id'], st.session_state.user_profile['email'], entry):
                         st.success(t.get('history_saved', 'History Logged!'))
