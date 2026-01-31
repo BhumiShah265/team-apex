@@ -11,21 +11,18 @@ import folium
 def get_user_location_js():
     # Standard fetch with promise chain - safer for inline execution
     js_code = """
-    (async () => {
-        try {
-            const r = await fetch("https://ipwho.is/");
-            const d = await r.json();
-            if (d.success !== false) return d;
-        } catch (e) { console.error("ipwho error", e); }
-        try {
-            const r = await fetch("https://ipapi.co/json/");
-            const d = await r.json();
-            if (!d.error) return d;
-        } catch (e) { console.error("ipapi error", e); }
-        return null;
-    })();
+    await fetch("https://ipwho.is/")
+        .then(response => response.json())
+        .then(data => {
+            if (data.success === false) return null;
+            return data;
+        })
+        .catch(err => {
+            console.error("IP Fetch Error:", err);
+            return null;
+        });
     """
-    return st_javascript(js_code, key="geo_ip_fetch_v4")
+    return st_javascript(js_code, key="geo_ip_fetch_v3")
 
 # Core Backend Imports
 from ai_engine import get_severity_color, format_confidence
@@ -127,6 +124,18 @@ def apply_modern_theme():
         opacity: 0 !important;
         border: none !important;
         position: absolute !important;
+        z-index: -1;
+    }
+    
+    /* Restore Folium Map Visibility (Matches st_folium height=450) */
+    iframe[height="450"], 
+    iframe[height="400"] {
+        height: 450px !important;
+        width: 100% !important;
+        opacity: 1 !important;
+        position: relative !important;
+        z-index: 10;
+        display: block !important;
     }
 
     .stTabs [data-baseweb="tab-list"] { 
@@ -467,12 +476,10 @@ if 'auto_city' not in st.session_state or st.session_state.get('location_source'
         nearest_city = get_nearest_city(lat, lon)
         
         # FIX: If mapping fails (returns Rajkot) but we have a real IP city, use the IP city!
-        if detected_ip_city:
+        if nearest_city == "Rajkot" and detected_ip_city and detected_ip_city != "Rajkot":
             nearest_city = detected_ip_city
         
         st.session_state['auto_city'] = nearest_city
-        st.session_state['auto_lat'] = lat
-        st.session_state['auto_lon'] = lon
         st.session_state['location_source'] = 'ip'
         st.session_state['gps_coords_debug'] = f"Estimated: {detected_ip_city}"
         # We only rerun if the city we just found is different from the current one
@@ -771,7 +778,7 @@ if st.session_state.live_data is None or st.session_state.last_city != selected_
         lat_arg, lon_arg = None, None
         
         # Priority Logic for Live Data Coords
-        if st.session_state.get('location_source') in ['browser', 'ip']:
+        if st.session_state.get('location_source') == 'browser':
             lat_arg = st.session_state.get('auto_lat')
             lon_arg = st.session_state.get('auto_lon')
         elif st.session_state.get('manual_city_override'):
