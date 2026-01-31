@@ -441,7 +441,8 @@ if browser_lat and browser_lon:
         print(f"❌ GPS Error: {e}")
 
 # 2. IP Fallback (Client-Side JS - Solves "The Dalles" Issue)
-if 'auto_city' not in st.session_state:
+# Run if location is missing OR if we are just using the default fallback (waiting for IP)
+if 'auto_city' not in st.session_state or st.session_state.get('location_source') == 'default':
     loc_data = get_user_location_js()
     
     if loc_data and isinstance(loc_data, dict) and loc_data.get('success'):
