@@ -440,13 +440,14 @@ if browser_lat and browser_lon:
         # DEBUG: Confirm reception
         st.toast(f"📍 GPS Found: {nearest_city} ({lat:.2f}, {lon:.2f})", icon="✅")
         
-        # Update session state
+        # Update session state with debug info
         st.session_state['auto_city'] = nearest_city
         st.session_state['auto_lat'] = lat
         st.session_state['auto_lon'] = lon
         st.session_state['location_detected'] = True
         st.session_state['location_source'] = 'browser'
-        st.session_state['dash_loc_perm'] = True # Automatically grant permission if GPS is used
+        st.session_state['dash_loc_perm'] = True
+        st.session_state['gps_coords_debug'] = f"Device GPS ({lat:.4f}, {lon:.4f})"
         
         # Clear params to prevent reload loop
         st.query_params.pop("browser_lat", None)
@@ -473,6 +474,7 @@ if 'auto_city' not in st.session_state:
                 st.session_state['auto_lon'] = lon
                 st.session_state['location_detected'] = True
                 st.session_state['location_source'] = 'ip'
+                st.session_state['gps_coords_debug'] = "IP Estimate"
     except Exception:
         pass
     
@@ -536,6 +538,7 @@ window.triggerGPS = function() {
     }
     
     const btn = document.getElementById('gps_button');
+    console.log("[GPS] Triggering browser geolocation...");
     if (btn) {
         btn.innerHTML = '📡 Locating...';
         btn.style.opacity = '0.7';
@@ -565,10 +568,7 @@ window.triggerGPS = function() {
 </script>
 """, unsafe_allow_html=True)
 
-# --- AUTOMATED GPS TRIGGER (After Permission Allow) ---
-if st.session_state.get('trigger_gps_automated'):
-    st.session_state.trigger_gps_automated = False
-    st.markdown("<script>setTimeout(() => { if(window.triggerGPS) window.triggerGPS(); }, 100);</script>", unsafe_allow_html=True)
+# --- AUTOMATED GPS TRIGGER (DEPRECATED - Moved to direct button) ---
 
 # App Title Header & Profile
 col_brand, col_profile = st.columns([0.9, 0.1])
@@ -598,12 +598,17 @@ with col_profile:
     }.get(loc_source, '📍')
     
     st.markdown(f"""
-    <div style="width: 100%; text-align: right; padding-right: 10px;">
+    <div style="width: 100%; text-align: right; padding-right: 10px; cursor: pointer;" onclick="document.getElementById('secret_city_trigger').click()">
         <span style="color: #2ECC71; font-size: 1rem; font-weight: 600; white-space: nowrap;">
             {source_icon} {selected_city}
         </span>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Hidden button to trigger city selector modal via JS bridge if needed
+    if st.button("📍", key="secret_city_trigger", help="Change City", label_visibility="collapsed"):
+        st.session_state.show_city_selector = True
+        st.rerun()
 
     # --- DYNAMIC PROFILE ICON HACK (THE NUCLEAR OPTION) ---
     if is_logged_in and st.session_state.user_profile.get("profile_pic"):
@@ -1307,10 +1312,25 @@ with tab_dash:
                 st.session_state.dash_loc_perm = False
                 st.rerun()
         with c2:
-            if st.button(t.get("allow", "Allow"), type="primary", use_container_width=True):
-                st.session_state.dash_loc_perm = True
-                st.session_state.trigger_gps_automated = True # Signal to run JS on next render
-                st.rerun()
+            # Use a custom HTML button to preserve the user gesture for browser GPS
+            st.markdown(f"""
+                <button onclick="window.triggerGPS()" style="
+                    width: 100%;
+                    background-color: #2ECC71;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 8px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    height: 38px;
+                ">
+                    {t.get("allow", "Allow")}
+                </button>
+            """, unsafe_allow_html=True)
+            # We still need a way to track if they "allowed" in session state even if GPS fails
+            # But triggerGPS will reload the page with params if successful.
+            # If they just close it or it fails, we fall back to IP.
 
     if st.session_state.dash_loc_perm is None and not _modal_open_in_this_run:
         request_dashboard_permission()
@@ -1338,6 +1358,9 @@ with tab_dash:
             last_upd = st.session_state.get('last_weather_update', datetime.datetime.now().strftime("%H:%M:%S"))
             gps_info = st.session_state.get('gps_coords_debug', 'Inferred Location')
             st.caption(f"📍 {gps_info} | {t.get('last_updated', 'Last updated')}: {last_upd}")
+            if st.button("📍 Not your city?", key="fix_location_btn", help="Manually select your city"):
+                st.session_state.show_city_selector = True
+                st.rerun()
         else:
             st.caption(t.get('location_denied', '🚫 *Location Access Denied - Data Unavailable*'))
 
