@@ -534,6 +534,11 @@ window.triggerGPS = function() {
 # App Title Header & Profile
 col_brand, col_profile = st.columns([0.9, 0.1])
 
+# --- AUTOMATED GPS TRIGGER (Restored) ---
+if st.session_state.get('trigger_gps_automated'):
+    st.session_state.trigger_gps_automated = False
+    st.markdown("<script>window.triggerGPS();</script>", unsafe_allow_html=True)
+
 with col_brand:
     # Logo + Title on Left - full width
     st.markdown(f"""
@@ -1197,7 +1202,8 @@ with tab_dash:
         with c2:
             if st.button(t.get("allow", "Allow"), type="primary", use_container_width=True):
                 st.session_state.dash_loc_perm = True
-                st.markdown("<script>window.triggerGPS();</script>", unsafe_allow_html=True)
+                st.session_state.trigger_gps_automated = True
+                st.rerun()
 
     if st.session_state.dash_loc_perm is None and not _modal_open_in_this_run:
         request_dashboard_permission()
