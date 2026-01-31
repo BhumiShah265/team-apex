@@ -123,6 +123,17 @@ def apply_modern_theme():
         opacity: 0 !important;
         border: none !important;
         position: absolute !important;
+        z-index: -1;
+    }
+    
+    /* Restore Folium Map Visibility (Targeting the specific height we set) */
+    iframe[height="400"] {
+        height: 400px !important;
+        width: 100% !important;
+        opacity: 1 !important;
+        position: relative !important;
+        z-index: 10;
+        display: block !important;
     }
 
     .stTabs [data-baseweb="tab-list"] { 
