@@ -1,7 +1,7 @@
 """
 Krishi-Mitra AI - User Authentication Database
 ================================================
-SQLite-based user management system
+PostgreSQL-based user management system (Neon)
 
 Features:
 - User Registration
@@ -9,16 +9,18 @@ Features:
 - Password Hashing with bcrypt
 - Password Policy Enforcement
 - Password Reset with OTP Verification
-
-Author: Krishi-Mitra Team
 """
 
-import sqlite3
+import psycopg2
+from psycopg2 import extras
 import hashlib
 import os
 import re
 import secrets
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Try to use bcrypt for secure password hashing
 try:
@@ -28,9 +30,8 @@ except ImportError:
     USE_BCRYPT = False
     print("[Auth DB] bcrypt not installed, falling back to SHA256 with salt")
 
-# Database path
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "users.db")
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+# Database connection string
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # OTP Configuration
 OTP_EXPIRY_MINUTES = 5
@@ -155,20 +156,12 @@ def check_password_breach(password: str) -> bool:
 def hash_password(password: str) -> str:
     """
     Hash password using bcrypt if available, otherwise SHA256 with salt.
-    
-    Args:
-        password: Plain text password
-        
-    Returns:
-        str: Hashed password
     """
     if USE_BCRYPT:
-        # Generate salt and hash with bcrypt
         salt = bcrypt.gensalt(rounds=12)
         hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
         return hashed.decode('utf-8')
     else:
-        # Fallback to SHA256 with salt (less secure but works without bcrypt)
         salt = os.urandom(16).hex()
         combined = salt + password
         return salt + ":" + hashlib.sha256(combined.encode()).hexdigest()
@@ -177,21 +170,14 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, stored_hash: str) -> bool:
     """
     Verify password against stored hash.
-    
-    Args:
-        password: Plain text password to verify
-        stored_hash: Hash stored in database
-        
-    Returns:
-        bool: True if password matches
     """
+    if not stored_hash: return False
     if USE_BCRYPT:
         try:
             return bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8'))
         except Exception:
             return False
     else:
-        # Handle SHA256 with salt format (salt:hash)
         try:
             salt, stored_password_hash = stored_hash.split(":")
             combined = salt + password
@@ -201,15 +187,19 @@ def verify_password(password: str, stored_hash: str) -> bool:
             return False
 
 
+def get_db_connection():
+    return psycopg2.connect(DATABASE_URL)
+
+
 def init_db():
     """Initialize the users database and OTP table."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Create users table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
             phone TEXT,
@@ -218,34 +208,27 @@ def init_db():
             notif_mandi INTEGER DEFAULT 0,
             password_hash TEXT NOT NULL,
             birthdate TEXT,
-            photo BLOB,
+            photo BYTEA,
             profile_pic TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
-    # Migration: Add columns if they don't exist
-    for col in ["phone", "city", "notif_weather", "notif_mandi", "profile_pic"]:
-        try:
-            cursor.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT")
-        except sqlite3.OperationalError:
-            pass # Column already exists
-    conn.commit()
     
     # Create password reset OTPs table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS password_reset_otps (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             email TEXT NOT NULL,
             otp TEXT NOT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            expires_at TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
             used INTEGER DEFAULT 0,
             UNIQUE(email)
         )
     ''')
     
     conn.commit()
+    cursor.close()
     conn.close()
 
 
@@ -254,28 +237,19 @@ def init_db():
 # ============================================================
 
 def check_email_exists(email: str) -> tuple:
-    """
-    Check if an email is registered in the database.
-    
-    Args:
-        email: User's email address
-        
-    Returns:
-        tuple: (exists: bool, user_data: dict or None)
-    """
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=extras.DictCursor)
         
         cursor.execute('''
-            SELECT id, name, email FROM users WHERE email = ?
+            SELECT id, name, email FROM users WHERE email = %s
         ''', (email.lower(),))
         
         user = cursor.fetchone()
         conn.close()
         
         if user:
-            return True, {"id": user[0], "name": user[1], "email": user[2]}
+            return True, dict(user)
         return False, None
         
     except Exception as e:
@@ -284,316 +258,171 @@ def check_email_exists(email: str) -> tuple:
 
 
 def generate_otp(email: str, check_exists: bool = True) -> tuple:
-    """
-    Generate and store OTP for password reset or registration.
-    
-    Args:
-        email: User's email address
-        check_exists: Whether to verify if the email is already registered
-        
-    Returns:
-        tuple: (success: bool, message: str, otp: str or None)
-    """
     try:
-        # Check if email exists if requested
         if check_exists:
             exists, user_data = check_email_exists(email)
             if not exists:
                 return False, "Email not registered!", None
         
-        # Generate secure OTP
-        otp = ''.join(str(secrets.randbelow(10)) for _ in range(OTP_LENGTH))
+        otp = ''.join([str(secrets.randbelow(10)) for _ in range(OTP_LENGTH)])
+        expiry_time = datetime.now() + timedelta(minutes=OTP_EXPIRY_MINUTES)
         
-        # Calculate expiry time
-        expires_at = datetime.now() + timedelta(minutes=OTP_EXPIRY_MINUTES)
-        
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Upsert OTP (insert or replace if exists)
         cursor.execute('''
-            INSERT OR REPLACE INTO password_reset_otps (email, otp, expires_at, used)
-            VALUES (?, ?, ?, 0)
-        ''', (email.lower(), otp, expires_at.strftime('%Y-%m-%d %H:%M:%S')))
+            INSERT INTO password_reset_otps (email, otp, expires_at, used)
+            VALUES (%s, %s, %s, 0)
+            ON CONFLICT (email) DO UPDATE 
+            SET otp = EXCLUDED.otp, 
+                expires_at = EXCLUDED.expires_at, 
+                used = 0,
+                created_at = CURRENT_TIMESTAMP
+        ''', (email.lower(), otp, expiry_time))
         
         conn.commit()
         conn.close()
         
-        print(f"[Auth DB] OTP generated for {email}: {otp}")  # For debugging
-        return True, f"OTP sent to {email}", otp
+        return True, "OTP generated and stored successfully", otp
         
     except Exception as e:
         print(f"[Auth DB] Error generating OTP: {e}")
-        return False, f"Error: {str(e)}", None
+        return False, f"Database error: {str(e)}", None
 
 
 def verify_otp(email: str, otp: str) -> tuple:
-    """
-    Verify OTP for password reset.
-    
-    Args:
-        email: User's email address
-        otp: One-time password to verify
-        
-    Returns:
-        tuple: (valid: bool, message: str)
-    """
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=extras.DictCursor)
         
         cursor.execute('''
-            SELECT otp, expires_at, used FROM password_reset_otps WHERE email = ?
-        ''', (email.lower(),))
+            SELECT * FROM password_reset_otps 
+            WHERE email = %s AND otp = %s AND used = 0
+            AND expires_at > %s
+        ''', (email.lower(), otp, datetime.now()))
         
-        result = cursor.fetchone()
-        conn.close()
+        record = cursor.fetchone()
         
-        if not result:
-            return False, "No OTP found. Please request a new OTP."
-        
-        stored_otp, expires_at, used = result
-        
-        if used == 1:
-            return False, "OTP already used. Please request a new OTP."
-        
-        # Check expiry
-        expiry_dt = datetime.strptime(expires_at, '%Y-%m-%d %H:%M:%S')
-        if datetime.now() > expiry_dt:
-            return False, "OTP has expired. Please request a new OTP."
-        
-        # Verify OTP
-        if otp != stored_otp:
-            return False, "Invalid OTP. Please try again."
-        
-        return True, "OTP verified successfully!"
-        
+        if record:
+            cursor.execute('''
+                UPDATE password_reset_otps SET used = 1 WHERE id = %s
+            ''', (record['id'],))
+            conn.commit()
+            conn.close()
+            return True, "OTP verified successfully"
+        else:
+            conn.close()
+            return False, "Invalid or expired OTP"
+            
     except Exception as e:
         print(f"[Auth DB] Error verifying OTP: {e}")
-        return False, f"Error: {str(e)}"
+        return False, f"Database error: {str(e)}"
 
 
-def update_password(email: str, new_password: str) -> tuple:
-    """
-    Update user password after OTP verification.
+def update_password(email: str, new_password: str) -> bool:
+    is_valid, _ = validate_password_policy(new_password)
+    if not is_valid: return False
     
-    Args:
-        email: User's email address
-        new_password: New password to set
-        
-    Returns:
-        tuple: (success: bool, message: str)
-    """
     try:
-        # Validate new password
-        is_valid, errors = validate_password_policy(new_password)
-        if not is_valid:
-            error_msg = "Password does not meet requirements:\n- " + "\n- ".join(errors)
-            return False, error_msg
-        
-        # Check for commonly breached passwords
-        if check_password_breach(new_password):
-            return False, "Password is too common. Please choose a more secure password."
-        
-        # Hash new password
         hashed_password = hash_password(new_password)
-        
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Update password
         cursor.execute('''
-            UPDATE users SET password_hash = ? WHERE email = ?
+            UPDATE users SET password_hash = %s WHERE email = %s
         ''', (hashed_password, email.lower()))
         
+        success = cursor.rowcount > 0
         conn.commit()
         conn.close()
-        
-        return True, "Password updated successfully! You can now login with your new password."
-        
+        return success
     except Exception as e:
         print(f"[Auth DB] Error updating password: {e}")
-        return False, f"Error: {str(e)}"
+        return False
 
 
 def delete_otp(email: str) -> bool:
-    """
-    Delete OTP record after successful password reset.
-    
-    Args:
-        email: User's email address
-        
-    Returns:
-        bool: True if deleted successfully
-    """
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute('DELETE FROM password_reset_otps WHERE email = ?', (email.lower(),))
-        
+        cursor.execute("DELETE FROM password_reset_otps WHERE email = %s", (email.lower(),))
         conn.commit()
         conn.close()
-        
         return True
-        
     except Exception as e:
         print(f"[Auth DB] Error deleting OTP: {e}")
         return False
 
 
-def cleanup_expired_otps():
-    """
-    Clean up expired OTP records.
-    Should be called periodically (e.g., daily).
-    """
+def login_user(email: str, password: str) -> tuple:
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=extras.DictCursor)
         
-        cursor.execute('''
-            DELETE FROM password_reset_otps 
-            WHERE expires_at < datetime('now', 'localtime')
-        ''')
-        
-        deleted_count = cursor.rowcount
-        conn.commit()
+        cursor.execute("SELECT * FROM users WHERE email = %s", (email.lower(),))
+        user = cursor.fetchone()
         conn.close()
         
-        print(f"[Auth DB] Cleaned up {deleted_count} expired OTP(s)")
-        return deleted_count
-        
+        if user and verify_password(password, user['password_hash']):
+            return True, dict(user)
+        return False, "Invalid email or password"
     except Exception as e:
-        print(f"[Auth DB] Error cleaning up OTPs: {e}")
-        return 0
+        return False, f"Error: {str(e)}"
 
 
 def register_user(name: str, email: str, password: str, phone: str = "", city: str = "", notif_weather: int = 1, notif_mandi: int = 0, birthdate=None, photo=None, profile_pic: str = None) -> tuple:
-    """
-    Register a new user with password policy validation.
-    
-    Args:
-        name: User's full name
-        email: User's email address
-        password: User's password
-        birthdate: Optional birthdate
-        photo: BLOB field legacy (unused now)
-        profile_pic: Base64 encoded image string
-        
-    Returns:
-        tuple: (success: bool, message: str)
-    """
-    # Validate password policy
     is_valid, errors = validate_password_policy(password)
     if not is_valid:
-        error_msg = "Password does not meet requirements:\n- " + "\n- ".join(errors)
-        return False, error_msg
+        return False, "Password requirements not met."
     
-    # Check for commonly breached passwords
     if check_password_breach(password):
-        return False, "Password is too common. Please choose a more secure password."
+        return False, "Password is too common."
     
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Check if email already exists
-        cursor.execute("SELECT id FROM users WHERE email = ?", (email.lower(),))
+        cursor.execute("SELECT id FROM users WHERE email = %s", (email.lower(),))
         if cursor.fetchone():
             conn.close()
             return False, "Email already registered!"
         
-        # Hash password and insert user
         hashed_password = hash_password(password)
         cursor.execute('''
             INSERT INTO users (name, email, phone, city, notif_weather, notif_mandi, password_hash, birthdate, photo, profile_pic)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (name, email.lower(), phone, city, notif_weather, notif_mandi, hashed_password, birthdate, photo, profile_pic))
         
         conn.commit()
         conn.close()
-        return True, "Registration successful! Your password meets security requirements."
-    
+        return True, "Registration successful!"
     except Exception as e:
         return False, f"Error: {str(e)}"
 
 
-def login_user(email: str, password: str) -> tuple:
-    """
-    Authenticate user with email and password.
-    
-    Args:
-        email: User's email address
-        password: User's password
-        
-    Returns:
-        tuple: (success: bool, result: dict or error message)
-    """
+def update_user_profile(user_id: int, name: str, email: str, phone: str = "", city: str = "", profile_pic: str = None) -> tuple:
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Select profile_pic
         cursor.execute('''
-            SELECT id, name, email, phone, city, notif_weather, notif_mandi, birthdate, photo, created_at, password_hash, profile_pic
-            FROM users WHERE email = ?
-        ''', (email.lower(),))
-        
-        user = cursor.fetchone()
-        conn.close()
-        
-        if user:
-            stored_hash = user[10]
-            if verify_password(password, stored_hash):
-                return True, {
-                    "id": user[0], "name": user[1], "email": user[2],
-                    "phone": user[3], "city": user[4],
-                    "notif_weather": user[5], "notif_mandi": user[6],
-                    "birthdate": user[7], "photo": user[8], "created_at": user[9],
-                    "profile_pic": user[11] # Return profile_pic
-                }
-        
-        return False, "Invalid email or password!"
-    
-    except Exception as e:
-        return False, f"Error: {str(e)}"
-
-
-def update_user_profile(user_id: int, name: str, email: str, phone: str, city: str, profile_pic: str = None) -> tuple:
-    """Update user profile details in the database."""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
-        if profile_pic is not None:
-            cursor.execute('''
-                UPDATE users SET name = ?, email = ?, phone = ?, city = ?, profile_pic = ? WHERE id = ?
-            ''', (name, email.lower(), phone, city, profile_pic, user_id))
-        else:
-            cursor.execute('''
-                UPDATE users SET name = ?, email = ?, phone = ?, city = ? WHERE id = ?
-            ''', (name, email.lower(), phone, city, user_id))
+            UPDATE users SET name=%s, email=%s, phone=%s, city=%s, profile_pic=%s
+            WHERE id=%s
+        ''', (name, email.lower(), phone, city, profile_pic, user_id))
         
         conn.commit()
         conn.close()
-        return True, "Profile updated successfully!"
+        return True, "Profile updated!"
     except Exception as e:
-        return False, f"Database error: {str(e)}"
+        return False, str(e)
 
-def update_user_notifications(user_id: int, weather: int, mandi: int) -> tuple:
-    """Update user notification preferences."""
+
+def update_user_notifications(user_id, weather_on, mandi_on):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE users SET notif_weather = ?, notif_mandi = ? WHERE id = ?
-        ''', (weather, mandi, user_id))
+        cursor.execute("UPDATE users SET notif_weather=%s, notif_mandi=%s WHERE id=%s", (int(weather_on), int(mandi_on), user_id))
         conn.commit()
         conn.close()
-        return True, "Notification preferences updated!"
-    except Exception as e:
-        return False, f"Database error: {str(e)}"
-
-# Initialize database on module import
-init_db()
-
+        return True
+    except: return False
