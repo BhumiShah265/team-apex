@@ -11,18 +11,21 @@ import folium
 def get_user_location_js():
     # Standard fetch with promise chain - safer for inline execution
     js_code = """
-    await fetch("https://ipwho.is/")
-        .then(response => response.json())
-        .then(data => {
-            if (data.success === false) return null;
-            return data;
-        })
-        .catch(err => {
-            console.error("IP Fetch Error:", err);
-            return null;
-        });
+    (async () => {
+        try {
+            const r = await fetch("https://ipwho.is/");
+            const d = await r.json();
+            if (d.success !== false) return d;
+        } catch (e) { console.error("ipwho error", e); }
+        try {
+            const r = await fetch("https://ipapi.co/json/");
+            const d = await r.json();
+            if (!d.error) return d;
+        } catch (e) { console.error("ipapi error", e); }
+        return null;
+    })();
     """
-    return st_javascript(js_code, key="geo_ip_fetch_v3")
+    return st_javascript(js_code, key="geo_ip_fetch_v4")
 
 # Core Backend Imports
 from ai_engine import get_severity_color, format_confidence
@@ -464,6 +467,12 @@ if browser_lat and browser_lon:
 
 # 2. IP Fallback (Refined logic)
 if 'auto_city' not in st.session_state or st.session_state.get('location_source') == 'default':
+    
+    # Run the JS Command
+    # Only show toast if we are genuinely waiting, not on every rerun
+    if 'geo_ip_fetch_v4' not in st.session_state:
+        st.toast("🛰️ Connecting to satellite...", icon="🌍")
+
     loc_data = get_user_location_js()
     
     # Check if data actually arrived and has a city
@@ -778,7 +787,7 @@ if st.session_state.live_data is None or st.session_state.last_city != selected_
         lat_arg, lon_arg = None, None
         
         # Priority Logic for Live Data Coords
-        if st.session_state.get('location_source') == 'browser':
+        if st.session_state.get('location_source') in ['browser', 'ip']:
             lat_arg = st.session_state.get('auto_lat')
             lon_arg = st.session_state.get('auto_lon')
         elif st.session_state.get('manual_city_override'):
