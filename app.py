@@ -430,15 +430,17 @@ if 'auto_city' not in st.session_state:
         r = requests.get("http://ip-api.com/json/", timeout=2)
         if r.status_code == 200:
             data = r.json()
-            lat = data.get("lat")
-            lon = data.get("lon")
-            if lat and lon:
-                nearest_city = get_nearest_city(lat, lon)
-                st.session_state['auto_city'] = nearest_city
-                st.session_state['auto_lat'] = lat
-                st.session_state['auto_lon'] = lon
-                st.session_state['location_detected'] = True
-                st.session_state['location_source'] = 'ip'
+            # Only accept if IP is in India (avoids US Server location on Streamlit Cloud)
+            if data.get("countryCode") == "IN":
+                lat = data.get("lat")
+                lon = data.get("lon")
+                if lat and lon:
+                    nearest_city = get_nearest_city(lat, lon)
+                    st.session_state['auto_city'] = nearest_city
+                    st.session_state['auto_lat'] = lat
+                    st.session_state['auto_lon'] = lon
+                    st.session_state['location_detected'] = True
+                    st.session_state['location_source'] = 'ip'
     except Exception:
         pass
     
