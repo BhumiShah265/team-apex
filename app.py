@@ -1,5 +1,4 @@
 import streamlit as st
-from streamlit_javascript import st_javascript # <--- Added as requested
 import streamlit.components.v1 as components
 import os
 import datetime
@@ -7,32 +6,8 @@ import random
 import requests
 from PIL import Image
 from streamlit_folium import st_folium
-import folium
+from get_location import get_gps_component
 
-def get_user_location_js():
-    # Standard fetch with promise chain - safer for inline execution
-    js_code = """
-    (async () => {
-        const fetchIP = async (url) => {
-            try {
-                const r = await fetch(url);
-                const d = await r.json();
-                return d;
-            } catch (e) { return null; }
-        };
-
-        // 1. Try ipapi.co (Very reliable)
-        let d = await fetchIP("https://ipapi.co/json/");
-        if (d && d.city) return { city: d.city, latitude: d.latitude, longitude: d.longitude };
-
-        // 2. Fallback to ipwho.is
-        d = await fetchIP("https://ipwho.is/");
-        if (d && d.success !== false) return d;
-
-        return null;
-    })();
-    """
-    return st_javascript(js_code, key="geo_ip_fetch_v5")
 
 # Core Backend Imports
 from ai_engine import get_severity_color, format_confidence
@@ -353,6 +328,9 @@ apply_modern_theme()
 # 2. APP STATE & LOCALIZATION
 # ==========================================
 if "language" not in st.session_state: st.session_state.language = "en"
+# This flag will be set to True if any modal is opened in this run.
+# This is to prevent the location permission dialog from opening at the same time.
+_modal_open_in_this_run = False
 
 # Advanced Dashboard Visuals
 st.markdown("""
@@ -437,38 +415,6 @@ update_translations()
 # AUTO-DETECT USER LOCATION (Before UI Render)
 # ==========================================
 
-# 0. INJECT HIDDEN GPS REQUESTER (Runs in background)
-# Only run if we don't have browser GPS yet
-if st.session_state.get('location_source') != 'browser':
-    components.html(
-    """
-    <script>
-    function getExactLocation() {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    const lat = pos.coords.latitude;
-                    const lon = pos.coords.longitude;
-                    // Only reload if we have a valid fix
-                    if (lat && lon) {
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('browser_lat', lat);
-                        url.searchParams.set('browser_lon', lon);
-                        window.location.href = url.toString();
-                    }
-                },
-                (err) => { console.log("GPS Denied/Error", err); },
-                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-            );
-        }
-    }
-    // Run immediately
-    getExactLocation();
-    </script>
-    """,
-    height=0, width=0
-    )
-
 # 1. Handle Browser GPS Params (Prioritized)
 browser_lat = st.query_params.get("browser_lat")
 browser_lon = st.query_params.get("browser_lon")
@@ -482,7 +428,7 @@ if browser_lat and browser_lon:
         lat = float(browser_lat)
         lon = float(browser_lon)
         
-        nearest_city = get_nearest_city(lat, lon)
+        nearest_city = f"GPS @ {lat:.3f}, {lon:.3f}" # TEMPORARY DEBUG BYPASS
         
         # DEBUG: Confirm reception
         st.toast(f"📍 GPS Found: {nearest_city} ({lat:.2f}, {lon:.2f})", icon="✅")
@@ -493,10 +439,12 @@ if browser_lat and browser_lon:
         st.session_state['auto_lon'] = lon
         st.session_state['location_detected'] = True
         st.session_state['location_source'] = 'browser'
+        st.session_state['location_locked'] = True  # <--- LOCK IT
+        st.caption(f"DEBUG GPS → lat={lat}, lon={lon}, city={nearest_city}, source=browser") # <--- DEBUG
         
         # Clear params to prevent reload loop
-        st.query_params.pop("browser_lat", None)
-        st.query_params.pop("browser_lon", None)
+        # Clear params to prevent reload loop
+        st.query_params.clear()
         
         # Force refresh data
         st.session_state.live_data = None
@@ -505,41 +453,35 @@ if browser_lat and browser_lon:
         print(f"❌ GPS Error: {e}")
 
 # 2. IP Fallback (Refined logic)
-if 'auto_city' not in st.session_state or st.session_state.get('location_source') == 'default':
-    
-    # Run the JS Command
-    # Only show toast if we are genuinely waiting, not on every rerun
-    # Run the JS Command
-    # Only show toast if we are genuinely waiting, not on every rerun
-    if 'geo_ip_fetch_v5' not in st.session_state:
-        st.toast("🛰️ Connecting to satellite...", icon="🌍")
+# 2. GPS BACKGROUND FETCHER (Replaces unreliable IP logic)
+# If we haven't locked a browser location yet, insert the script to fetch it
+if not st.session_state.get('location_locked'):
+    get_gps_component()
 
-    loc_data = get_user_location_js()
-    
-    # Check if data actually arrived and has a city
-    if loc_data and isinstance(loc_data, dict) and loc_data.get('city'):
-        lat = loc_data.get('latitude')
-        lon = loc_data.get('longitude')
-        detected_ip_city = loc_data.get('city')
-        
-        # FORCE UPDATE: Use the detected city directly
-        st.session_state['auto_city'] = detected_ip_city
-        st.session_state['auto_lat'] = lat
-        st.session_state['auto_lon'] = lon
-        st.session_state['location_source'] = 'ip'
-        st.session_state['gps_coords_debug'] = f"Detected: {detected_ip_city}"
-        
-        # We only rerun if the city we just found is different from the current one
-        if st.session_state.get('last_detected_ip') != nearest_city:
-            st.session_state['last_detected_ip'] = nearest_city
-            st.rerun()
-    
-    # Default Fallback
-    if 'auto_city' not in st.session_state:
-        st.session_state['auto_city'] = "Ahmedabad"
-        st.session_state['auto_lat'] = 23.0225
-        st.session_state['auto_lon'] = 72.5714
-        st.session_state['location_source'] = 'default'
+def trigger_manual_gps():
+    # Only for button clicks
+    components.html(
+    """
+    <script>
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            const url = new URL(window.location.href);
+            url.searchParams.set('browser_lat', pos.coords.latitude);
+            url.searchParams.set('browser_lon', pos.coords.longitude);
+            window.location.href = url.toString();
+        }
+    );
+    </script>
+    """,
+    height=0, width=0
+    )
+
+# Use default ONLY if we haven't locked a real location
+if not st.session_state.get('location_locked'):
+    st.session_state.setdefault('auto_city', 'Ahmedabad')
+    st.session_state.setdefault('auto_lat', 23.0225)
+    st.session_state.setdefault('auto_lon', 72.5714)
+    st.session_state.setdefault('location_source', 'default')
 
 def get_live_data_for_city(city_name, lat=None, lon=None):
     try:
@@ -626,10 +568,6 @@ window.triggerGPS = function() {
 # App Title Header & Profile
 col_brand, col_profile = st.columns([0.9, 0.1])
 
-# --- AUTOMATED GPS TRIGGER (Restored) ---
-if st.session_state.get('trigger_gps_automated'):
-    st.session_state.trigger_gps_automated = False
-    st.markdown("<script>window.triggerGPS();</script>", unsafe_allow_html=True)
 
 with col_brand:
     # Logo + Title on Left - full width
@@ -848,9 +786,6 @@ coords = live_data.get("coordinates", {}) if live_data else {}
 # ==========================================
 # 3.1. PROFILE & SETTINGS MODALS
 # ==========================================
-# This flag will be set to True if any modal is opened in this run.
-# This is to prevent the location permission dialog from opening at the same time.
-_modal_open_in_this_run = False
 @st.dialog(t.get("edit_profile", "Edit Profile"))
 def profile_modal():
     from utils.auth_db import update_user_profile
