@@ -9,15 +9,11 @@ from streamlit_folium import st_folium
 import folium
 
 def get_user_location_js():
-    # We use a slightly different approach to ensure Streamlit catches the object
+    # Standard fetch with promise chain - safer for inline execution
     js_code = """
-    (async () => {
-        const response = await fetch('https://ipwho.is/');
-        const data = await response.json();
-        return data;
-    })()
+    await fetch("https://ipwho.is/").then(r => r.json()).then(data => data)
     """
-    return st_javascript(js_code)
+    return st_javascript(js_code, key="geo_ip_fetch_v2")
 
 # Core Backend Imports
 from ai_engine import get_severity_color, format_confidence
@@ -114,9 +110,10 @@ def apply_modern_theme():
 
     /* Ensure JS iframes are not hidden */
     iframe {
-        opacity: 1 !important;
-        height: auto !important;
-        min-height: 0px !important;
+        height: 0px !important;
+        width: 0px !important;
+        border: none !important;
+        position: absolute !important;
     }
 
     .stTabs [data-baseweb="tab-list"] { 
