@@ -645,9 +645,8 @@ with col_profile:
         else:
             # LOGGED IN MENU (Restored Settings)
             prof = st.session_state.user_profile
-            st.markdown(f"**{prof.get('name', 'User')}**")
-            st.caption(prof.get('email'))
-            st.divider()
+            # Name and email display removed as requested
+
             
             if st.button("⚙️ Settings", use_container_width=True):
                 st.session_state.show_settings_modal = True
