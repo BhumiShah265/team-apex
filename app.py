@@ -9,19 +9,20 @@ from streamlit_folium import st_folium
 import folium
 
 def get_user_location_js():
-    # Robust JS fetch with error handling
+    # Standard fetch with promise chain - safer for inline execution
     js_code = """
-    (async () => {
-        try {
-            const response = await fetch('https://ipwho.is/');
-            const data = await response.json();
+    await fetch("https://ipwho.is/")
+        .then(response => response.json())
+        .then(data => {
+            if (data.success === false) return null;
             return data;
-        } catch (e) {
-            return { error: e.message };
-        }
-    })()
+        })
+        .catch(err => {
+            console.error("IP Fetch Error:", err);
+            return null;
+        });
     """
-    return st_javascript(js_code, key="loc_scraper_v3")
+    return st_javascript(js_code, key="geo_ip_fetch_v3")
 
 # Core Backend Imports
 from ai_engine import get_severity_color, format_confidence
@@ -469,7 +470,7 @@ if 'auto_city' not in st.session_state or st.session_state.get('location_source'
     
     # 2. Run the JS Command
     # Only show toast if we are genuinely waiting, not on every rerun
-    if 'loc_scraper_v3' not in st.session_state:
+    if 'geo_ip_fetch_v3' not in st.session_state:
         st.toast("🛰️ Connecting to satellite...", icon="🌍")
     
     loc_data = get_user_location_js()
