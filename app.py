@@ -1314,7 +1314,45 @@ with tab_dash:
                 st.rerun()
         with c2:
             st.markdown(f"""
-                <button id="gps_button" onclick="window.triggerGPS()" style="
+                <script>
+                function triggerGPSModal() {{
+                    const btn = document.getElementById('gps_button');
+                    if (btn) {{
+                        btn.innerHTML = '📡 Locating...';
+                        btn.style.opacity = '0.7';
+                        btn.disabled = true;
+                    }}
+                    
+                    if (!navigator.geolocation) {{
+                        alert('Geolocation is not supported by your browser.');
+                        if (btn) {{ btn.innerHTML = 'Allow'; btn.disabled = false; btn.style.opacity = '1'; }}
+                        return;
+                    }}
+                    
+                    navigator.geolocation.getCurrentPosition(
+                        function(position) {{
+                            const lat = position.coords.latitude.toFixed(6);
+                            const lon = position.coords.longitude.toFixed(6);
+                            const url = new URL(window.location.href);
+                            url.searchParams.set('browser_lat', lat);
+                            url.searchParams.set('browser_lon', lon);
+                            window.location.href = url.toString();
+                        }},
+                        function(error) {{
+                            let msg = 'Unknown error';
+                            switch(error.code) {{
+                                case 1: msg = 'Permission denied.'; break;
+                                case 2: msg = 'Position unavailable.'; break;
+                                case 3: msg = 'Timeout.'; break;
+                            }}
+                            alert("Location Error: " + msg);
+                            if (btn) {{ btn.innerHTML = 'Allow'; btn.disabled = false; btn.style.opacity = '1'; }}
+                        }},
+                        {{ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }}
+                    );
+                }}
+                </script>
+                <button id="gps_button" onclick="triggerGPSModal()" style="
                     width: 100%;
                     background-color: #2ECC71;
                     color: white;
