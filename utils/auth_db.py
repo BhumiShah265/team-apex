@@ -30,8 +30,7 @@ except ImportError:
     USE_BCRYPT = False
     print("[Auth DB] bcrypt not installed, falling back to SHA256 with salt")
 
-# Database connection string
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Database connection string is fetched inside get_db_connection
 
 # OTP Configuration
 OTP_EXPIRY_MINUTES = 5
@@ -188,7 +187,10 @@ def verify_password(password: str, stored_hash: str) -> bool:
 
 
 def get_db_connection():
-    return psycopg2.connect(DATABASE_URL)
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        raise ValueError("DATABASE_URL environment variable is not set. Please add it to your Streamlit Secrets.")
+    return psycopg2.connect(url)
 
 
 def init_db():

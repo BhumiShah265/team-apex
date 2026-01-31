@@ -12,11 +12,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Database connection string
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Database connection string is fetched inside get_db_connection
 
 def get_db_connection():
-    return psycopg2.connect(DATABASE_URL)
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        raise ValueError("DATABASE_URL environment variable is not set. Please add it to your Streamlit Secrets.")
+    return psycopg2.connect(url)
 
 def init_farm_db():
     """Initialize farms, history, and crops tables in PostgreSQL."""
