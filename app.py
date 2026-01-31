@@ -2137,7 +2137,8 @@ with tab_chat:
             if user_text and user_text != st.session_state.get('last_msg'):
                 st.session_state.last_msg = user_text
                 st.session_state.chat_messages.append({"role": "user", "content": user_text})
-                # Trigger AI logic 
+                # Clear the input box for the next message
+                st.session_state.user_input_text_fixed = ""
                 st.rerun()
 
             # AI Response Logic (Check if last message was user)
