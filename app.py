@@ -1314,7 +1314,7 @@ with tab_dash:
                 st.rerun()
         with c2:
             st.markdown(f"""
-                <button onclick="window.triggerGPS()" style="
+                <button id="gps_button" onclick="window.triggerGPS()" style="
                     width: 100%;
                     background-color: #2ECC71;
                     color: white;
