@@ -193,19 +193,57 @@ def save_user_crop(user_id, crop_data):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        
+        # KEY MAPPING for compatibility with app.py
+        c_name = crop_data.get('crop_name') or crop_data.get('name')
+        c_area = crop_data.get('area')
+        c_date = crop_data.get('planting_date') or crop_data.get('date')
+        c_lat = crop_data.get('lat')
+        c_lon = crop_data.get('lon')
+        
         if crop_data.get('id'):
             cursor.execute('''
                 UPDATE farm_crops SET crop_name=%s, area=%s, planting_date=%s, lat=%s, lon=%s WHERE id=%s AND user_id=%s
-            ''', (crop_data['crop_name'], crop_data['area'], crop_data['planting_date'], crop_data.get('lat'), crop_data.get('lon'), crop_data['id'], user_id))
+            ''', (c_name, c_area, c_date, c_lat, c_lon, crop_data['id'], user_id))
         else:
             cursor.execute('''
                 INSERT INTO farm_crops (user_id, crop_name, area, planting_date, lat, lon)
                 VALUES (%s, %s, %s, %s, %s, %s)
-            ''', (user_id, crop_data['crop_name'], crop_data['area'], crop_data['planting_date'], crop_data.get('lat'), crop_data.get('lon')))
+            ''', (user_id, c_name, c_area, c_date, c_lat, c_lon))
         conn.commit()
         conn.close()
         return True
-    except: return False
+    except Exception as e:
+        print(f"Save crop error: {e}")
+        return False
+
+def update_user_crop(crop_id, crop_data):
+    """
+    Update specific crop by ID. 
+    NOTE: Does not check user_id for ownership here as app.py call signature omits it.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # KEY MAPPING
+        c_name = crop_data.get('crop_name') or crop_data.get('name')
+        c_area = crop_data.get('area')
+        c_date = crop_data.get('planting_date') or crop_data.get('date')
+        c_lat = crop_data.get('lat')
+        c_lon = crop_data.get('lon')
+
+        cursor.execute('''
+            UPDATE farm_crops 
+            SET crop_name=%s, area=%s, planting_date=%s, lat=%s, lon=%s 
+            WHERE id=%s
+        ''', (c_name, c_area, c_date, c_lat, c_lon, crop_id))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Update crop error: {e}")
+        return False
 
 def delete_user_crop(user_id, crop_id):
     try:
