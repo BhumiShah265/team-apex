@@ -9,11 +9,19 @@ from streamlit_folium import st_folium
 import folium
 
 def get_user_location_js():
-    # Standard fetch with promise chain - safer for inline execution
+    # Robust JS fetch with error handling
     js_code = """
-    await fetch("https://ipwho.is/").then(r => r.json()).then(data => data)
+    (async () => {
+        try {
+            const response = await fetch('https://ipwho.is/');
+            const data = await response.json();
+            return data;
+        } catch (e) {
+            return { error: e.message };
+        }
+    })()
     """
-    return st_javascript(js_code, key="geo_ip_fetch_v2")
+    return st_javascript(js_code, key="loc_scraper_v3")
 
 # Core Backend Imports
 from ai_engine import get_severity_color, format_confidence
@@ -441,32 +449,55 @@ if browser_lat and browser_lon:
     except Exception as e:
         print(f"❌ GPS Error: {e}")
 
-# 2. IP Fallback (Refined logic)
+# ==========================================
+# 📍 LOCATION INTELLIGENCE (Robust Version)
+# ==========================================
+# 1. If we already have the location, STOP checking (Save resources)
+# EXCEPT if the source is 'default' (Rajkot fallback), in which case we KEEP checking
 if 'auto_city' not in st.session_state or st.session_state.get('location_source') == 'default':
+    
+    # 2. Run the JS Command
+    # Only show toast if we are genuinely waiting, not on every rerun
+    if 'loc_scraper_v3' not in st.session_state:
+        st.toast("🛰️ Connecting to satellite...", icon="🌍")
+    
     loc_data = get_user_location_js()
     
-    # Check if data actually arrived and has a city
-    if loc_data and isinstance(loc_data, dict) and loc_data.get('city'):
-        lat = loc_data.get('latitude')
-        lon = loc_data.get('longitude')
-        detected_ip_city = loc_data.get('city')
-        
-        # Power Move: Map to our nearest city
-        nearest_city = get_nearest_city(lat, lon)
-        
-        # FIX: If mapping fails (returns Rajkot) but we have a real IP city, use the IP city!
-        if nearest_city == "Rajkot" and detected_ip_city and detected_ip_city != "Rajkot":
-            nearest_city = detected_ip_city
-        
-        st.session_state['auto_city'] = nearest_city
-        st.session_state['location_source'] = 'ip'
-        st.session_state['gps_coords_debug'] = f"Estimated: {detected_ip_city}"
-        # We only rerun if the city we just found is different from the current one
-        if st.session_state.get('last_detected_ip') != nearest_city:
-            st.session_state['last_detected_ip'] = nearest_city
-            st.rerun()
-    
-    # Default Fallback
+    # 3. Check the Result
+    if loc_data:
+        # If it returns a dictionary with 'city', we are golden
+        if isinstance(loc_data, dict) and 'city' in loc_data:
+            detected_ip_city = loc_data.get('city')
+            lat = loc_data.get('latitude')
+            lon = loc_data.get('longitude')
+            
+            # Map to nearest city if coordinates exist
+            if lat and lon:
+                nearest_city = get_nearest_city(lat, lon)
+                
+                # FIX: If mapping fails (returns Rajkot) but we have a real IP city, use the IP city!
+                if nearest_city == "Rajkot" and detected_ip_city and detected_ip_city != "Rajkot":
+                    nearest_city = detected_ip_city
+            else:
+                nearest_city = detected_ip_city
+
+            st.session_state['auto_city'] = nearest_city
+            st.session_state['location_source'] = 'ip'
+            st.session_state['auto_lat'] = lat
+            st.session_state['auto_lon'] = lon
+            st.session_state['gps_coords_debug'] = f"Estimated: {detected_ip_city}"
+            
+            # 🔄 Refresh immediately to show data if it's new
+            if st.session_state.get('last_detected_ip') != nearest_city:
+                st.session_state['last_detected_ip'] = nearest_city
+                st.rerun() 
+            
+        # If it returns an error/empty, we log it but don't crash
+        elif 'error' in loc_data:
+            print(f"⚠️ Location blocked: {loc_data['error']}")
+
+    # 4. The "While Loading" State
+    # Only use Rajkot if we have truly given up or just started and have NO data
     if 'auto_city' not in st.session_state:
         st.session_state['auto_city'] = "Rajkot"
         st.session_state['auto_lat'] = 22.3039
