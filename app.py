@@ -9,18 +9,14 @@ from streamlit_folium import st_folium
 import folium
 
 def get_user_location_js():
-    """
-    Runs JS in the browser to fetch location via ipwho.is (HTTPS supported).
-    Returns the JSON dictionary.
-    """
-    # JS code to fetch data securely
+    # We use a slightly different approach to ensure Streamlit catches the object
     js_code = """
-    await fetch("https://ipwho.is/")
-        .then(response => response.json())
-        .then(data => data)
+    (async () => {
+        const response = await fetch('https://ipwho.is/');
+        const data = await response.json();
+        return data;
+    })()
     """
-    
-    # Run the JS and get the result
     return st_javascript(js_code)
 
 # Core Backend Imports
@@ -440,26 +436,25 @@ if browser_lat and browser_lon:
     except Exception as e:
         print(f"❌ GPS Error: {e}")
 
-# 2. IP Fallback (Client-Side JS - Solves "The Dalles" Issue)
-# Run if location is missing OR if we are just using the default fallback (waiting for IP)
+# 2. IP Fallback (Refined logic)
 if 'auto_city' not in st.session_state or st.session_state.get('location_source') == 'default':
     loc_data = get_user_location_js()
     
-    if loc_data and isinstance(loc_data, dict) and loc_data.get('success'):
+    # Check if data actually arrived and has a city
+    if loc_data and isinstance(loc_data, dict) and loc_data.get('city'):
         lat = loc_data.get('latitude')
         lon = loc_data.get('longitude')
-        city = loc_data.get('city')
+        detected_ip_city = loc_data.get('city')
         
-        if lat and lon:
-            # Map coords to nearest supported city
-            nearest_city = get_nearest_city(lat, lon)
-            
-            st.session_state['auto_city'] = nearest_city
-            st.session_state['auto_lat'] = lat
-            st.session_state['auto_lon'] = lon
-            st.session_state['location_detected'] = True
-            st.session_state['location_source'] = 'ip'
-            st.session_state['gps_coords_debug'] = f"IP: {city} (Est)"
+        # Power Move: Map to our nearest city
+        nearest_city = get_nearest_city(lat, lon)
+        
+        st.session_state['auto_city'] = nearest_city
+        st.session_state['location_source'] = 'ip'
+        st.session_state['gps_coords_debug'] = f"Estimated: {detected_ip_city}"
+        # We only rerun if the city we just found is different from the current one
+        if st.session_state.get('last_detected_ip') != nearest_city:
+            st.session_state['last_detected_ip'] = nearest_city
             st.rerun()
     
     # Default Fallback
