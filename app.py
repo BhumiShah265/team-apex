@@ -566,8 +566,8 @@ with col_profile:
     }.get(loc_source, '📍')
     
     st.markdown(f"""
-    <div style="width: 100%; text-align: right; padding-right: 10px;">
-        <span style="color: #2ECC71; font-size: 1rem; font-weight: 600;">
+    <div style="width: 100%; text-align: right; padding-right: 10px; cursor: pointer;" onclick="window.triggerGPS()">
+        <span style="color: #2ECC71; font-size: 1rem; font-weight: 600; white-space: nowrap;" title="Click to use GPS">
             {source_icon} {selected_city}
         </span>
     </div>
@@ -634,6 +634,9 @@ with col_profile:
             st.markdown("### Welcome Guest")
             if st.button("Login", use_container_width=True): 
                 st.session_state.show_login_modal = True
+                st.rerun()
+            if st.button("Sign Up", use_container_width=True):
+                st.session_state.show_signup_modal = True
                 st.rerun()
             if st.button("Settings", use_container_width=True):
                 st.session_state.show_settings_modal = True
