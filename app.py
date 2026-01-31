@@ -22,7 +22,7 @@ from data_utils import (
     get_crops_by_category, get_nearest_city, # <--- ENSURE THIS IS IMPORTED FROM data_utils
     GUJARAT_CITIES, GUJARAT_CROPS, VEHICLE_TYPES
 )
-from utils.auth_db import login_user, register_user, update_password, generate_otp, verify_otp, check_email_exists, update_user_notifications
+from utils.auth_db import login_user, register_user, update_password, generate_otp, verify_otp, check_email_exists, update_user_notifications, validate_password_policy
 from utils.farm_db import (
     init_farm_db, migrate_farm_db, get_farm, save_farm, 
     save_history_record, get_history_records, get_user_crops, 
@@ -1156,19 +1156,20 @@ def signup_modal():
             elif not (phone.isdigit() and len(phone) == 10):
                 st.error("Please enter a valid 10-digit phone number.")
             
-            # 5. Password Validation
-            elif len(password) < 6:
-                st.error("Password must be at least 6 characters long.")
-            
+            # 5. Password Validation (Using existing policy)
             else:
-                from utils.auth_db import check_email_exists, generate_otp
-                from utils.email_utils import send_otp_email
-                
-                exists, _ = check_email_exists(email)
-                if exists:
-                    st.error("Email already registered. Please login instead.")
+                p_valid, p_errors = validate_password_policy(password)
+                if not p_valid:
+                    st.error("Password requirements not met:\n" + "\n".join([f"- {e}" for e in p_errors]))
                 else:
-                    success, otp_msg, otp = generate_otp(email, check_exists=False)
+                    from utils.auth_db import check_email_exists, generate_otp
+                    from utils.email_utils import send_otp_email
+                    
+                    exists, _ = check_email_exists(email)
+                    if exists:
+                        st.error("Email already registered. Please login instead.")
+                    else:
+                        success, otp_msg, otp = generate_otp(email, check_exists=False)
                     if success:
                         e_success, e_msg = send_otp_email(email, otp, name, subject="🔐 Krishi-Mitra AI - Account Verification OTP")
                         if e_success:
