@@ -21,7 +21,10 @@ from data_utils import (
     get_crops_by_category, get_nearest_city, # <--- ENSURE THIS IS IMPORTED FROM data_utils
     GUJARAT_CITIES, GUJARAT_CROPS, VEHICLE_TYPES
 )
-from utils.auth_db import login_user, register_user, update_password, generate_otp, verify_otp, check_email_exists, update_user_notifications, validate_password_policy
+from utils.auth_db import (
+    login_user, register_user, update_password, generate_otp, verify_otp, 
+    check_email_exists, update_user_notifications, validate_password_policy, init_db
+)
 from utils.farm_db import (
     init_farm_db, migrate_farm_db, get_farm, save_farm, 
     save_history_record, get_history_records, get_user_crops, 
@@ -31,12 +34,13 @@ from utils.email_utils import send_otp_email, send_alert_notification
 from utils.sms_utils import send_sms_otp
 from utils.pdf_gen import generate_farm_report
 
-# Initialize Farm DB
+# Initialize Database Schema
 try:
-    init_farm_db()
-    migrate_farm_db()
-except Exception:
-    pass
+    init_db() # Create user tables
+    init_farm_db() # Create farm tables
+    migrate_farm_db() # Run migrations
+except Exception as e:
+    st.error(f"Database initialization error: {e}")
 
 # ==========================================
 # 1. HIGH-END UI CONFIGURATION
