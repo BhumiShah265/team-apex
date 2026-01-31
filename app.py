@@ -1898,6 +1898,8 @@ with tab_chat:
         st.session_state.pending_audio = None
     if 'chat_to_delete' not in st.session_state:
         st.session_state.chat_to_delete = None
+    if 'audio_reset_counter' not in st.session_state:
+        st.session_state.audio_reset_counter = 0
     if 'chat_to_rename' not in st.session_state:
         st.session_state.chat_to_rename = None
     if 'guest_chat_history' not in st.session_state:
@@ -2141,8 +2143,8 @@ with tab_chat:
                                              on_change=submit_chat)
                 
                 with input_c2:
-                    # Microphone Input
-                    audio_result = st.audio_input("Voice", label_visibility="collapsed", key="mic_fixed")
+                    # Microphone Input with dynamic key for resetting
+                    audio_result = st.audio_input("Voice", label_visibility="collapsed", key=f"mic_fixed_{st.session_state.audio_reset_counter}")
 
             # --- LOGIC: Process Input ---
 
@@ -2230,8 +2232,8 @@ with tab_chat:
                                 if transcribed_text and not transcribed_text.startswith("Error"):
                                     st.session_state.chat_messages.append({"role": "user", "content": transcribed_text.strip()})
                                     st.session_state.voice_interaction = True
-                                    # Clear the audio input to reset the widget
-                                    st.session_state.mic_fixed = None
+                                    # Increment counter to force widget reset (key rotation)
+                                    st.session_state.audio_reset_counter += 1
                                     st.rerun()
                                 elif transcribed_text.startswith("Error"):
                                     st.error(transcribed_text)
