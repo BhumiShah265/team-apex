@@ -70,7 +70,10 @@ def apply_modern_theme():
         font-family: 'Inter', sans-serif;
     }
 
-    section[data-testid="stSidebar"] { display: none !important; }
+    section[data-testid="stSidebar"], [data-testid="stSidebarNav"], [data-testid="stSidebarCollapsedControl"] {
+        display: none !important;
+        width: 0 !important;
+    }
     header[data-testid="stHeader"] { display: none !important; }
     
     div.block-container { 
