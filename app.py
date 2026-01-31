@@ -599,7 +599,7 @@ with col_profile:
     
     st.markdown(f"""
     <div style="width: 100%; text-align: right; padding-right: 10px;">
-        <span style="color: #2ECC71; font-size: 1rem; font-weight: 600;">
+        <span style="color: #2ECC71; font-size: 1rem; font-weight: 600; white-space: nowrap;">
             {source_icon} {selected_city}
         </span>
     </div>
