@@ -1,0 +1,198 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --brand-primary: #10B981;
+    --brand-secondary: #34D399;
+    --brand-accent: #059669;
+    --brand-glow: rgba(16, 185, 129, 0.15);
+
+    /* Light mode: warm cream background */
+    --bg-light: #FFFEFA;
+    --glass-light: rgba(255, 255, 255, 1.0);
+    /* Dark text for cream background */
+    --text-primary-light: #1A1A1A;
+    --text-secondary-light: #4A4A4A;
+    /* Border for light mode */
+    --border-light: rgba(180, 180, 175, 0.6);
+
+    /* Dark mode: near-black background */
+    --bg-dark: #0A0C10;
+    --glass-dark: rgba(17, 24, 39, 1.0);
+    /* Off-white text for dark background */
+    --text-primary-dark: #F5F5F5;
+    --text-secondary-dark: #D1D5DB;
+    /* Border for dark mode */
+    --border-dark: rgba(75, 85, 99, 0.6);
+
+    --radius-premium: 16px;
+    --shadow-premium: 0 4px 20px -2px rgba(0, 0, 0, 0.1);
+}
+
+/* Global Font Size Increase */
+html {
+    font-size: 18px;
+}
+
+.stApp {
+    font-family: 'Outfit', 'Inter', sans-serif !important;
+    background-color: var(--background) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Move everything UP */
+[data-testid="stHeader"] {
+    height: 0 !important;
+    visibility: hidden !important;
+}
+
+.main .block-container {
+    padding-top: 1rem !important;
+    margin-top: 0 !important;
+}
+
+.stTabs {
+    margin-top: -1rem !important;
+}
+
+/* Theme Switching Utilities */
+[data-theme="light"] {
+    --background: var(--bg-light);
+    --surface: var(--glass-light);
+    --text-primary: var(--text-primary-light);
+    --text-secondary: var(--text-secondary-light);
+    --border-color: var(--border-light);
+}
+
+[data-theme="dark"] {
+    --background: var(--bg-dark);
+    --surface: var(--glass-dark);
+    --text-primary: var(--text-primary-dark);
+    --text-secondary: var(--text-secondary-dark);
+    --border-color: var(--border-dark);
+}
+
+/* Navigation Cleanup - Hide duplicated sidebar links */
+[data-testid="stSidebarNav"] {
+    display: none !important;
+}
+
+/* Headings */
+h1 {
+    font-size: 2.5rem !important;
+    font-weight: 700 !important;
+    margin-bottom: 1.5rem !important;
+}
+
+h2 {
+    font-size: 2rem !important;
+    font-weight: 600 !important;
+    margin-bottom: 1.25rem !important;
+}
+
+h3 {
+    font-size: 1.5rem !important;
+    font-weight: 600 !important;
+    margin-bottom: 1rem !important;
+}
+
+/* Bento Cards - Increased readability */
+.bento-card {
+    background: var(--surface) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--radius-premium) !important;
+    padding: 2rem !important;
+    box-shadow: var(--shadow-premium) !important;
+    margin-bottom: 1rem;
+}
+
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] {
+    background: var(--surface) !important;
+    border-radius: 12px !important;
+    padding: 4px !important;
+    border: 1px solid var(--border-color) !important;
+}
+
+.stTabs [data-baseweb="tab"] {
+    font-size: 3.2rem !important;
+    font-weight: 600 !important;
+    padding: 0.75rem 1.5rem !important;
+}
+
+/* Sidebar */
+[data-testid="stSidebar"] {
+    background-color: var(--surface) !important;
+    min-width: 320px !important;
+}
+
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label {
+    font-size: 1.1rem !important;
+    font-weight: 500 !important;
+}
+
+/* Buttons */
+.stButton>button {
+    font-size: 1.1rem !important;
+    font-weight: 700 !important;
+    padding: 0.75rem 2rem !important;
+    border-radius: 12px !important;
+}
+
+/* Stats */
+.premium-stat-label {
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    color: var(--text-secondary) !important;
+    text-transform: uppercase;
+}
+
+.premium-stat-value {
+    font-size: 3rem !important;
+    font-weight: 800 !important;
+    color: var(--brand-primary) !important;
+}
+
+/* Inputs */
+.stSelectbox>div,
+.stTextInput>div,
+.stTextArea>div,
+.stDateInput>div,
+.stNumberInput>div {
+    font-size: 1.1rem !important;
+    border-radius: 12px !important;
+}
+
+label {
+    font-size: 1.1rem !important;
+    font-weight: 600 !important;
+    margin-bottom: 0.5rem !important;
+}
+
+/* Visibility Fixes */
+[data-testid="stMarkdownContainer"] p,
+.stMarkdown p,
+.stMarkdown span {
+    color: var(--text-primary) !important;
+    line-height: 1.6;
+}
+
+svg {
+    color: var(--text-primary) !important;
+    fill: var(--text-primary) !important;
+}
+
+/* Alert Contrast */
+div[data-testid="stAlert"] {
+    background: var(--surface) !important;
+    border: 2px solid var(--brand-primary) !important;
+}
+
+div[data-testid="stAlert"] p {
+    color: var(--text-primary) !important;
+    font-weight: 600 !important;
+}
+/* Absolute top alignment */
+div[data-testid="stVerticalBlock"] > div:first-child {
+    margin-top: -2rem !important;
+}
