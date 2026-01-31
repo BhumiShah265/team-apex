@@ -1,5 +1,6 @@
 import streamlit as st
 from streamlit_javascript import st_javascript # <--- Added as requested
+import streamlit.components.v1 as components
 import os
 import datetime
 import random
