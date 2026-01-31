@@ -12,6 +12,7 @@ from ai_engine import get_severity_color, format_confidence
 from bhashini_layer import get_translations, translate_dynamic, speak_gujarati, speak_english, text_to_speech, translate_to_english
 from utils.backend_utils import get_weather, get_mandi_prices
 from utils.components import footer_buttons
+from utils.farm_db import update_user_crop
 # Advanced AI & Data Backend Imports
 from gemini_engine import chat_with_krishi_mitra, analyze_crop_image, transcribe_audio, get_ai_fusion_advice, generate_title_from_message
 from data_utils import (
@@ -21,26 +22,17 @@ from data_utils import (
     get_crops_by_category, get_nearest_city, # <--- ENSURE THIS IS IMPORTED FROM data_utils
     GUJARAT_CITIES, GUJARAT_CROPS, VEHICLE_TYPES
 )
-from utils.auth_db import (
-    login_user, register_user, update_password, generate_otp, verify_otp, 
-    check_email_exists, update_user_notifications, validate_password_policy, init_db
-)
-from utils.farm_db import (
-    init_farm_db, migrate_farm_db, get_farm, save_farm, 
-    save_history_record, get_history_records, get_user_crops, 
-    save_user_crop, delete_user_crop, get_regional_disease_stats
-)
+from utils.auth_db import login_user, register_user, update_password, generate_otp, verify_otp, check_email_exists, update_user_notifications
+from utils.farm_db import init_farm_db, get_farm, save_farm, save_history_record, get_history_records, get_user_crops, save_user_crop, delete_user_crop
 from utils.email_utils import send_otp_email, send_alert_notification
 from utils.sms_utils import send_sms_otp
 from utils.pdf_gen import generate_farm_report
 
-# Initialize Database Schema
+# Initialize Farm DB
 try:
-    init_db() # Create user tables
-    init_farm_db() # Create farm tables
-    migrate_farm_db() # Run migrations
-except Exception as e:
-    st.error(f"Database initialization error: {e}")
+    init_farm_db()
+except Exception:
+    pass
 
 # ==========================================
 # 1. HIGH-END UI CONFIGURATION
@@ -78,10 +70,7 @@ def apply_modern_theme():
         font-family: 'Inter', sans-serif;
     }
 
-    section[data-testid="stSidebar"], [data-testid="stSidebarNav"], [data-testid="stSidebarCollapsedControl"] {
-        display: none !important;
-        width: 0 !important;
-    }
+    section[data-testid="stSidebar"] { display: none !important; }
     header[data-testid="stHeader"] { display: none !important; }
     
     div.block-container { 
@@ -252,28 +241,6 @@ def apply_modern_theme():
         margin: 0 auto !important;
     }
 
-    /* Refresh Button Spin Animation */
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    div[data-testid="stColumn"] button[key="refresh_weather"]:hover {
-        animation: spin 1s linear infinite;
-    }
-    
-    /* Make the 🔄 button more subtle */
-    button[key="refresh_weather"] {
-        background: transparent !important;
-        border: 1px solid var(--border-glass) !important;
-        border-radius: 50% !important;
-        width: 40px !important;
-        height: 40px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        padding: 0 !important;
-    }
-
     /* Target buttons inside the popover body - use theme colors */
     div[data-testid="stPopoverBody"] button {
         background-color: rgba(46, 204, 113, 0.1) !important;
@@ -440,14 +407,12 @@ if browser_lat and browser_lon:
         # DEBUG: Confirm reception
         st.toast(f"📍 GPS Found: {nearest_city} ({lat:.2f}, {lon:.2f})", icon="✅")
         
-        # Update session state with debug info
+        # Update session state
         st.session_state['auto_city'] = nearest_city
         st.session_state['auto_lat'] = lat
         st.session_state['auto_lon'] = lon
         st.session_state['location_detected'] = True
         st.session_state['location_source'] = 'browser'
-        st.session_state['dash_loc_perm'] = True
-        st.session_state['gps_coords_debug'] = f"Device GPS ({lat:.4f}, {lon:.4f})"
         
         # Clear params to prevent reload loop
         st.query_params.pop("browser_lat", None)
@@ -474,7 +439,6 @@ if 'auto_city' not in st.session_state:
                 st.session_state['auto_lon'] = lon
                 st.session_state['location_detected'] = True
                 st.session_state['location_source'] = 'ip'
-                st.session_state['gps_coords_debug'] = "IP Estimate"
     except Exception:
         pass
     
@@ -538,7 +502,6 @@ window.triggerGPS = function() {
     }
     
     const btn = document.getElementById('gps_button');
-    console.log("[GPS] Triggering browser geolocation...");
     if (btn) {
         btn.innerHTML = '📡 Locating...';
         btn.style.opacity = '0.7';
@@ -568,8 +531,6 @@ window.triggerGPS = function() {
 </script>
 """, unsafe_allow_html=True)
 
-# --- AUTOMATED GPS TRIGGER (DEPRECATED - Moved to direct button) ---
-
 # App Title Header & Profile
 col_brand, col_profile = st.columns([0.9, 0.1])
 
@@ -598,17 +559,12 @@ with col_profile:
     }.get(loc_source, '📍')
     
     st.markdown(f"""
-    <div style="width: 100%; text-align: right; padding-right: 10px; cursor: pointer;" onclick="document.getElementById('secret_city_trigger').click()">
-        <span style="color: #2ECC71; font-size: 1rem; font-weight: 600; white-space: nowrap;">
+    <div style="width: 100%; text-align: right; padding-right: 10px;">
+        <span style="color: #2ECC71; font-size: 1rem; font-weight: 600;">
             {source_icon} {selected_city}
         </span>
     </div>
     """, unsafe_allow_html=True)
-    
-    # Hidden button to trigger city selector modal via JS bridge if needed
-    if st.button("📍", key="secret_city_trigger", help="Change City"):
-        st.session_state.show_city_selector = True
-        st.rerun()
 
     # --- DYNAMIC PROFILE ICON HACK (THE NUCLEAR OPTION) ---
     if is_logged_in and st.session_state.user_profile.get("profile_pic"):
@@ -672,17 +628,15 @@ with col_profile:
             if st.button("Login", use_container_width=True): 
                 st.session_state.show_login_modal = True
                 st.rerun()
-            if st.button("Sign Up", use_container_width=True):
-                st.session_state.show_signup_modal = True
-                st.rerun()
             if st.button("Settings", use_container_width=True):
                 st.session_state.show_settings_modal = True
                 st.rerun()
         else:
             # LOGGED IN MENU (Restored Settings)
             prof = st.session_state.user_profile
-            # Name and email display removed as requested
-
+            st.markdown(f"**{prof.get('name', 'User')}**")
+            st.caption(prof.get('email'))
+            st.divider()
             
             if st.button("⚙️ Settings", use_container_width=True):
                 st.session_state.show_settings_modal = True
@@ -738,7 +692,6 @@ if st.session_state.get('show_city_selector', False):
             st.session_state['auto_lon'] = gps['lon']
             st.session_state['location_detected'] = True
             st.session_state['location_source'] = 'manual'
-            st.session_state['gps_coords_debug'] = "Manual Selection"
             st.session_state['show_city_selector'] = False
             st.success(f"✅ Location set to **{selected_city_val}**")
             st.rerun()
@@ -767,25 +720,23 @@ if 'last_city' not in st.session_state:
 
 # Update Data Logic (The line that was crashing)
 if st.session_state.live_data is None or st.session_state.last_city != selected_city:
-
-    if st.session_state.live_data is None or st.session_state.last_city != selected_city:
-        with st.spinner(t.get('loading_data', 'Fetching...').format(city=selected_city)):
-            # Use specific coords if this is the auto-detected city
-            lat_arg, lon_arg = None, None
+    with st.spinner(t.get('loading_data', 'Fetching...').format(city=selected_city)):
+        # Use specific coords if this is the auto-detected city
+        lat_arg, lon_arg = None, None
+        
+        # Priority Logic for Live Data Coords
+        if st.session_state.get('location_source') == 'browser':
+            lat_arg = st.session_state.get('auto_lat')
+            lon_arg = st.session_state.get('auto_lon')
+        elif st.session_state.get('manual_city_override'):
+            # Get GPS for manually selected city
+            gps = get_gps_from_city(selected_city)
+            if gps:
+                lat_arg = gps['lat']
+                lon_arg = gps['lon']
             
-            # Priority Logic for Live Data Coords
-            if st.session_state.get('location_source') == 'browser':
-                lat_arg = st.session_state.get('auto_lat')
-                lon_arg = st.session_state.get('auto_lon')
-            elif st.session_state.get('manual_city_override'):
-                # Get GPS for manually selected city
-                gps = get_gps_from_city(selected_city)
-                if gps:
-                    lat_arg = gps['lat']
-                    lon_arg = gps['lon']
-                
-            st.session_state.live_data = get_live_data_for_city(selected_city, lat=lat_arg, lon=lon_arg)
-            st.session_state.last_city = selected_city
+        st.session_state.live_data = get_live_data_for_city(selected_city, lat=lat_arg, lon=lon_arg)
+        st.session_state.last_city = selected_city
 
 # Get live data from session state
 live_data = st.session_state.live_data
@@ -1095,7 +1046,7 @@ def forgot_password_modal():
                 if success:
                     # In a real app, send_otp_email would be used
                     from utils.email_utils import send_otp_email
-                    send_otp_email(email, otp, user_data['name'], subject="🔐 Krishi-Mitra AI - Password Reset OTP")
+                    send_otp_email(email, otp, user_data['name'])
                     st.session_state.reset_email = email
                     st.session_state.show_forgot_password_modal = False
                     st.session_state.show_reset_password_modal = True
@@ -1137,122 +1088,53 @@ def reset_password_modal():
 
 @st.dialog(t.get("signup", "Sign Up"))
 def signup_modal():
-    if "signup_step" not in st.session_state:
-        st.session_state.signup_step = "form"
+    st.markdown(f"### {t.get('signup_title', 'Create Account')}")
     
-    if st.session_state.signup_step == "form":
-        st.markdown(f"### {t.get('signup_title', 'Create Account')}")
-        
-        # --- Profile Photo Upload ---
-        st.markdown("**📸 Profile Photo (Max 2MB)**")
-        profile_img = st.file_uploader("Upload your photo", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
-        
-        b64_img = None
-        if profile_img:
-            if profile_img.size > 2 * 1024 * 1024:
-                st.error("❌ File too large. Please upload an image smaller than 2MB.")
-            else:
-                st.image(profile_img, width=100)
-                import base64
-                b64_img = base64.b64encode(profile_img.getvalue()).decode()
+    # --- Profile Photo Upload ---
+    st.markdown("**📸 Profile Photo (Max 2MB)**")
+    profile_img = st.file_uploader("Upload your photo", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
+    
+    b64_img = None
+    if profile_img:
+        if profile_img.size > 2 * 1024 * 1024: # 2MB Limit
+            st.error("❌ File too large. Please upload an image smaller than 2MB.")
+            profile_img = None
+        else:
+            # Preview the selected image
+            st.image(profile_img, width=100)
+            import base64
+            b64_img = base64.b64encode(profile_img.getvalue()).decode()
 
-        name = st.text_input(t.get("full_name", "Full Name"), key="signup_name")
-        email = st.text_input(t.get("email", "Email Address"), key="signup_email")
-        phone = st.text_input(t.get("phone_number", "Phone Number (10 Digits)"), max_chars=10, key="signup_phone")
-        password = st.text_input(t.get("password", "Password"), type="password", key="signup_password")
-        
-        all_cities = get_all_cities()
-        auto_city = st.session_state.get('auto_city', "Rajkot")
-        try:
-            city_idx = all_cities.index(auto_city)
-        except ValueError:
-            city_idx = 0
-            
-        def fmt_city(x):
-            return translate_dynamic(x, st.session_state.language)
-            
-        selected_city_val = st.selectbox(f"📍 {t.get('city', 'Your City')}", all_cities, index=city_idx, format_func=fmt_city, key="signup_city")
-        
-        if st.button(t.get("signup_btn", "Send Verification OTP"), type="primary", use_container_width=True):
-            import re
-            
-            # 1. Basic Empty Checks
-            if not name or not email or not password or not phone:
-                st.error("Please fill in all required fields.")
-            
-            # 2. Name Validation
-            elif len(name.strip()) < 2:
-                st.error("Please enter a valid full name.")
-            
-            # 3. Email Validation
-            elif not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-                st.error("Please enter a valid email address.")
-            
-            # 4. Phone Validation (10 digits)
-            elif not (phone.isdigit() and len(phone) == 10):
-                st.error("Please enter a valid 10-digit phone number.")
-            
-            # 5. Password Validation (Using existing policy)
-            else:
-                p_valid, p_errors = validate_password_policy(password)
-                if not p_valid:
-                    st.error("Password requirements not met:\n" + "\n".join([f"- {e}" for e in p_errors]))
-                else:
-                    from utils.auth_db import check_email_exists, generate_otp
-                    from utils.email_utils import send_otp_email
-                    
-                    exists, _ = check_email_exists(email)
-                    if exists:
-                        st.error("Email already registered. Please login instead.")
-                    else:
-                        success, otp_msg, otp = generate_otp(email, check_exists=False)
-                        if success:
-                            e_success, e_msg = send_otp_email(email, otp, name, subject="🔐 Krishi-Mitra AI - Account Verification OTP")
-                            if e_success:
-                                st.session_state.signup_data = {
-                                    "name": name,
-                                    "email": email,
-                                    "phone": phone,
-                                    "password": password,
-                                    "city": selected_city_val,
-                                    "profile_pic": b64_img
-                                }
-                                st.session_state.signup_step = "otp"
-                                st.rerun()
-                            else:
-                                st.error(f"Failed to send email: {e_msg}")
-                        else:
-                            st.error(otp_msg)
+    name = st.text_input(t.get("full_name", "Full Name"))
+    email = st.text_input(t.get("email", "Email Address"))
+    phone = st.text_input(t.get("phone_number", "Phone Number (10 Digits)"), max_chars=10)
+    password = st.text_input(t.get("password", "Password"), type="password")
     
-    elif st.session_state.signup_step == "otp":
-        st.markdown(f"### {t.get('verify_email', 'Verify Your Email')}")
-        st.info(f"An OTP has been sent to **{st.session_state.signup_data['email']}**")
+    all_cities = get_all_cities()
+    auto_city = st.session_state.get('auto_city', "Rajkot")
+    try:
+        city_idx = all_cities.index(auto_city)
+    except ValueError:
+        city_idx = 0
         
-        otp_input = st.text_input("Enter 6-Digit OTP", max_chars=6)
+    def fmt_city(x):
+        return translate_dynamic(x, st.session_state.language)
         
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Verify & Register", type="primary", use_container_width=True):
-                from utils.auth_db import verify_otp, register_user
-                valid, msg = verify_otp(st.session_state.signup_data['email'], otp_input)
-                if valid:
-                    d = st.session_state.signup_data
-                    success, message = register_user(d['name'], d['email'], d['password'], d['phone'], d['city'], profile_pic=d['profile_pic'])
-                    if success:
-                        st.success("Account verified and created successfully!")
-                        st.session_state.signup_step = "form" # Reset for next time
-                        st.session_state.show_signup_modal = False
-                        st.session_state.show_login_modal = True
-                        st.rerun()
-                    else:
-                        st.error(message)
-                else:
-                    st.error(msg)
-        
-        with col2:
-            if st.button("Back", use_container_width=True):
-                st.session_state.signup_step = "form"
+    selected_city_val = st.selectbox(f"📍 {t.get('city', 'Your City')}", all_cities, index=city_idx, format_func=fmt_city)
+    
+    if st.button(t.get("signup_btn", "Create Account"), type="primary", use_container_width=True):
+        if not name or not email or not password or not phone:
+            st.error("Please fill in all required fields.")
+        else:
+            # Pass b64_img to your registration function
+            success, message = register_user(name, email, password, phone, selected_city_val, profile_pic=b64_img)
+            if success:
+                st.success("Account created! Please login.")
+                st.session_state.show_signup_modal = False
+                st.session_state.show_login_modal = True
                 st.rerun()
+            else:
+                st.error(message)
 # ... inside the popover menu ...
 
 # ==========================================
@@ -1313,71 +1195,9 @@ with tab_dash:
                 st.session_state.dash_loc_perm = False
                 st.rerun()
         with c2:
-            st.markdown(f"""
-                <script>
-                window.triggerGPSModal = function() {{
-                    console.log("GPS Button Clicked");
-                    const btn = document.getElementById('gps_button');
-                    if (btn) {{
-                        btn.innerText = '📡 Locating...';
-                        btn.style.opacity = '0.7';
-                        btn.disabled = true;
-                    }}
-                    
-                    if (!navigator.geolocation) {{
-                        alert('Geolocation is not supported by your browser.');
-                        if (btn) {{ btn.innerText = 'Allow'; btn.disabled = false; btn.style.opacity = '1'; }}
-                        return;
-                    }}
-                    
-                    navigator.geolocation.getCurrentPosition(
-                        function(position) {{
-                            console.log("Position Found");
-                            const lat = position.coords.latitude.toFixed(6);
-                            const lon = position.coords.longitude.toFixed(6);
-                            
-                            // Construct URL with params and reload
-                            const url = new URL(window.location.href);
-                            url.searchParams.set('browser_lat', lat);
-                            url.searchParams.set('browser_lon', lon);
-                            window.location.href = url.toString();
-                        }},
-                        function(error) {{
-                            console.error("GPS Error", error);
-                            let msg = 'Unknown error';
-                            switch(error.code) {{
-                                case 1: msg = 'Permission denied. Please allow location access in your browser settings.'; break;
-                                case 2: msg = 'Position unavailable.'; break;
-                                case 3: msg = 'Timeout.'; break;
-                            }}
-                            alert("Location Error: " + msg);
-                            if (btn) {{ btn.innerText = 'Allow'; btn.disabled = false; btn.style.opacity = '1'; }}
-                        }},
-                        {{ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }}
-                    );
-                }}
-                </script>
-                <button id="gps_button" onclick="window.triggerGPSModal()" style="
-                    width: 100%;
-                    background-color: #2ECC71;
-                    color: white;
-                    border: none;
-                    padding: 8px 16px;
-                    border-radius: 8px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    height: 38px;
-                ">
-                    {t.get("allow", "Allow")}
-                </button>
-            """, unsafe_allow_html=True)
-        
-        # Add a "Manual" option if detection fails or isn't desired
-        st.write("---")
-        if st.button(f"🏢 {t.get('select_manually', 'Select Manually')}", use_container_width=True):
-            st.session_state.dash_loc_perm = True # Grant viewing perm
-            st.session_state.show_city_selector = True # Open selector
-            st.rerun()
+            if st.button(t.get("allow", "Allow"), type="primary", use_container_width=True):
+                st.session_state.dash_loc_perm = True
+                st.markdown("<script>window.triggerGPS();</script>", unsafe_allow_html=True)
 
     if st.session_state.dash_loc_perm is None and not _modal_open_in_this_run:
         request_dashboard_permission()
@@ -1392,22 +1212,13 @@ with tab_dash:
     col_refresh, col_status = st.columns([0.1, 0.9])
     with col_refresh:
         if st.button("🔄", key="refresh_weather", help="Refresh weather data"):
-            with st.spinner(t.get('refreshing', 'Updating...')):
-                import time
-                st.session_state.live_data = None
-                st.session_state.last_weather_update = datetime.datetime.now().strftime("%H:%M:%S")
-                time.sleep(0.8) # Small delay for "feel"
-                st.toast(t.get('data_updated', 'Data Updated!'), icon="✅")
-                st.rerun()
+            st.session_state.live_data = None
+            st.rerun()
     with col_status:
         if is_active:
             # Show debug info about location detection
-            last_upd = st.session_state.get('last_weather_update', datetime.datetime.now().strftime("%H:%M:%S"))
-            gps_info = st.session_state.get('gps_coords_debug', 'Inferred Location')
-            st.caption(f"📍 {gps_info} | {t.get('last_updated', 'Last updated')}: {last_upd}")
-            if st.button("📍 Not your city?", key="fix_location_btn", help="Manually select your city"):
-                st.session_state.show_city_selector = True
-                st.rerun()
+            if 'gps_coords_debug' in st.session_state:
+                st.caption(f"📍 {st.session_state['gps_coords_debug']} | Source: {st.session_state.get('location_source', 'unknown')}")
         else:
             st.caption(t.get('location_denied', '🚫 *Location Access Denied - Data Unavailable*'))
 
@@ -1824,9 +1635,7 @@ with tab_diag:
                             "disease": d.get('disease', 'Unknown'),
                             "pesticide": ", ".join(f.get('treatment_advice', [])[:2]), # Save first few treatments
                             "unusual": f"AI diagnosis: {f.get('urgency', 'Medium')} severity.",
-                            "duration": "Diagnosed via AI",
-                            "lat": st.session_state.get('auto_lat'),
-                            "lon": st.session_state.get('auto_lon')
+                            "duration": "Diagnosed via AI"
                         }
                         if save_history_record(st.session_state.user_profile['id'], st.session_state.user_profile['email'], hist_entry):
                             st.toast(t.get('history_saved', 'History Logged!'), icon="✅")
@@ -1855,7 +1664,7 @@ with tab_mandi:
             default_idx = 0
             if smart_match and smart_match in all_crops:
                 default_idx = all_crops.index(smart_match)
-                st.caption(f"✅ Matched: {translate_dynamic(smart_match, st.session_state.language)}")
+                st.success(f"Matched: **{translate_dynamic(smart_match, st.session_state.language)}**")
             elif "Groundnut (HPS)" in all_crops:
                 default_idx = all_crops.index("Groundnut (HPS)")
 
@@ -2000,13 +1809,6 @@ with tab_mandi:
         st.info(t.get('select_crop_mandi', '👆 Select crop and calculate best mandi to see arbitrage opportunities.'))
 
 with tab_chat:
-    # --- 0. Helper Functions ---
-    def submit_chat():
-        user_text = st.session_state.user_input_text_fixed
-        if user_text and user_text.strip():
-            st.session_state.chat_messages.append({"role": "user", "content": user_text.strip()})
-            st.session_state.user_input_text_fixed = ""
-    
     # Import chat database functions
     from utils.chat_db import (
         create_chat_session, save_message, get_chat_messages,
@@ -2033,8 +1835,6 @@ with tab_chat:
         st.session_state.pending_audio = None
     if 'chat_to_delete' not in st.session_state:
         st.session_state.chat_to_delete = None
-    if 'audio_reset_counter' not in st.session_state:
-        st.session_state.audio_reset_counter = 0
     if 'chat_to_rename' not in st.session_state:
         st.session_state.chat_to_rename = None
     if 'guest_chat_history' not in st.session_state:
@@ -2252,7 +2052,7 @@ with tab_chat:
                 # Render pending audio for autoplay inside the container so it's associated with the flow
                 if st.session_state.pending_audio:
                     if len(st.session_state.pending_audio) > 1000:
-                        st.audio(st.session_state.pending_audio, autoplay=True, loop=False)
+                        st.audio(st.session_state.pending_audio, autoplay=True)
                         st.toast("Audio response ready", icon="📢")
                     st.session_state.pending_audio = None
 
@@ -2271,18 +2071,21 @@ with tab_chat:
                 
                 with input_c1:
                     # Text Input
-                    st.text_input("Message", 
-                                             placeholder=t.get('ask_ai', 'Ask me anything about farming...'), 
-                                             label_visibility="collapsed", 
-                                             key="user_input_text_fixed",
-                                             on_change=submit_chat)
+                    user_text = st.text_input("Message", 
+                                            placeholder=t.get('ask_ai', 'Ask me anything about farming...'), 
+                                            label_visibility="collapsed", 
+                                            key="user_input_text_fixed")
                 
                 with input_c2:
-                    # Microphone Input with dynamic key for resetting
-                    audio_result = st.audio_input("Voice", label_visibility="collapsed", key=f"mic_fixed_{st.session_state.audio_reset_counter}")
+                    # Microphone Input
+                    audio_result = st.audio_input("Voice", label_visibility="collapsed", key="mic_fixed")
 
             # --- LOGIC: Process Input ---
-
+            if user_text and user_text != st.session_state.get('last_msg'):
+                st.session_state.last_msg = user_text
+                st.session_state.chat_messages.append({"role": "user", "content": user_text})
+                # Trigger AI logic 
+                st.rerun()
 
             # AI Response Logic (Check if last message was user)
             if (st.session_state.chat_messages and 
@@ -2332,17 +2135,6 @@ with tab_chat:
                                         "crop": crop_list,
                                         "user_farm": user_farm
                                     })
-                                    
-                                    # Add full crop history for better analysis
-                                    full_history = get_history_records(st.session_state.user_profile['id'])
-                                    context["full_history"] = full_history
-                                    
-                                    # Add regional context (10km radius)
-                                    u_lat = st.session_state.get('auto_lat')
-                                    u_lon = st.session_state.get('auto_lon')
-                                    if u_lat and u_lon:
-                                        regional_stats = get_regional_disease_stats(u_lat, u_lon, radius_km=10)
-                                        context["regional_stats"] = regional_stats
 
                                 reply = chat_with_krishi_mitra(user_msg, st.session_state.language, context)
                                 st.write(reply)
@@ -2378,8 +2170,8 @@ with tab_chat:
                                 if transcribed_text and not transcribed_text.startswith("Error"):
                                     st.session_state.chat_messages.append({"role": "user", "content": transcribed_text.strip()})
                                     st.session_state.voice_interaction = True
-                                    # Increment counter to force widget reset (key rotation)
-                                    st.session_state.audio_reset_counter += 1
+                                    # Mark this specific audio file as processed
+                                    st.session_state.last_processed_audio_id = audio_id
                                     st.rerun()
                                 elif transcribed_text.startswith("Error"):
                                     st.error(transcribed_text)
@@ -2477,8 +2269,6 @@ with tab_farm:
                     key="export_report_btn",
                     type="secondary"
                 )
-            except Exception as e:
-                st.error(f"PDF Error: {e}")
             except Exception as e:
                 st.error(f"PDF Error: {e}")
 
@@ -2595,21 +2385,8 @@ with tab_farm:
                 col_det1, col_det2 = st.columns(2)
                 
                 with col_det1:
-                    # --- SMART SEARCH FOR CROP REGISTRATION ---
-                    search_label = "🔍 શોધો (દા.ત. Kapas, Gahu)" if st.session_state.language == 'gu' else "🔍 Smart Search (e.g. Kapas, Gahu)"
-                    farm_crop_search = st.text_input(search_label, placeholder="Type crop name...", key="farm_crop_search_input")
-                    
-                    smart_match = get_smart_crop_match(farm_crop_search)
-                    all_crops_list = get_all_crops()
-                    
-                    def_name_idx = 0
-                    if smart_match and smart_match in all_crops_list:
-                        def_name_idx = all_crops_list.index(smart_match)
-                        st.caption(f"✅ Matched: {translate_dynamic(smart_match, st.session_state.language)}")
-                    elif is_edit and edit_crop['crop_name'] in all_crops_list:
-                        def_name_idx = all_crops_list.index(edit_crop['crop_name'])
-                    
-                    f_name = st.selectbox(t.get("crop_name_label", "Crop Name"), all_crops_list, index=def_name_idx, key="new_crop_name", format_func=lambda x: translate_dynamic(x, st.session_state.language))
+                    def_name_idx = get_all_crops().index(edit_crop['crop_name']) if is_edit and edit_crop['crop_name'] in get_all_crops() else 0
+                    f_name = st.selectbox(t.get("crop_name_label", "Crop Name"), get_all_crops(), index=def_name_idx, key="new_crop_name")
                 
                 with col_det2:
                     f_area = st.number_input(t.get("area_label", "Cultivated Area (Acres)"), min_value=0.1, value=float(edit_crop['area']) if is_edit else 1.0, step=0.5, key="new_crop_area")
@@ -2918,24 +2695,7 @@ with tab_hist:
         with st.form("history_form"):
             c1, c2 = st.columns(2)
             with c1:
-                # --- SMART SEARCH FOR HISTORY LOG ---
-                search_label = "🔍 શોધો (દા.ત. Kapas, Gahu)" if st.session_state.language == 'gu' else "🔍 Smart Search (e.g. Kapas, Gahu)"
-                hist_crop_search = st.text_input(search_label, placeholder="Type crop name...", key="hist_crop_search_input")
-                
-                smart_match = get_smart_crop_match(hist_crop_search)
-                all_crops_list = get_all_crops()
-                
-                def_hist_idx = 0
-                if smart_match and smart_match in all_crops_list:
-                    def_hist_idx = all_crops_list.index(smart_match)
-                    st.caption(f"✅ Matched: {translate_dynamic(smart_match, st.session_state.language)}")
-                
-                h_crop = st.selectbox(t.get('history_crop', 'Crop Name'), 
-                                     all_crops_list, 
-                                     index=def_hist_idx, 
-                                     key="hist_crop_select", 
-                                     format_func=lambda x: translate_dynamic(x, st.session_state.language))
-                
+                h_crop = st.text_input(t.get('history_crop', 'Crop Name'), placeholder="e.g. Cotton")
                 h_disease = st.text_input(t.get('history_disease', 'Past Diseases'), placeholder="e.g. Leaf Curl")
                 h_duration = st.text_input(t.get('history_duration', 'Time to First Fruit'), placeholder="e.g. 45 days")
             with c2:
@@ -2952,9 +2712,7 @@ with tab_hist:
                         "disease": h_disease,
                         "pesticide": h_pesticide,
                         "unusual": h_unusual,
-                        "duration": h_duration,
-                        "lat": st.session_state.get('auto_lat'),
-                        "lon": st.session_state.get('auto_lon')
+                        "duration": h_duration
                     }
                     if save_history_record(st.session_state.user_profile['id'], st.session_state.user_profile['email'], entry):
                         st.success(t.get('history_saved', 'History Logged!'))

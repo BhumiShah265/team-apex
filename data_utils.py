@@ -229,8 +229,6 @@ def get_gov_mandi_price(crop, district):
 # ============================================================
 
 @st.cache_data(ttl=300, show_spinner=False)
-# Update the arguments to accept transport_rate
-@st.cache_data(ttl=300, show_spinner=False)
 def calculate_arbitrage(crop: str, user_lat: float, user_lon: float, quantity: float = 10, transport_rate: float = 18) -> dict:
     """
     Optimized Arbitrage Calculator with Dynamic Transport Rate.
@@ -497,30 +495,21 @@ CROP_PHONETIC_MAP = {
     # Fenugreek
     "methi": "Fenugreek (Methi)", "fenugreek": "Fenugreek (Methi)",
     # Castor
-    "arandi": "Castor Seeds", "castor": "Castor Seeds", "divela": "Castor Seeds",
+    "arandi": "Castor Seeds", "castor": "Castor Seeds",
     # Sesame
     "til": "Sesame (Til)", "sesame": "Sesame (Til)",
     # Potato
-    "aloo": "Potato", "potato": "Potato", "bataka": "Potato",
+    "aloo": "Potato", "potato": "Potato",
     # Onion
-    "piyaz": "Onion", "onion": "Onion", "kanda": "Onion", "dungri": "Onion",
+    "piyaz": "Onion", "onion": "Onion", "kanda": "Onion",
     # Tomato
-    "tamatar": "Tomato", "tomato": "Tomato", "tameta": "Tomato",
+    "tamatar": "Tomato", "tomato": "Tomato",
     # Mango
-    "aam": "Mango (Kesar)", "mango": "Mango (Kesar)", "kesar": "Mango (Kesar)", "keri": "Mango (Kesar)",
+    "aam": "Mango (Kesar)", "mango": "Mango (Kesar)", "kesar": "Mango (Kesar)",
     # Banana
     "kela": "Banana", "banana": "Banana",
-    # Sugarcane
+# Sugarcane
     "sherdi": "Sugarcane", "ganna": "Sugarcane", "sugarcane": "Sugarcane",
-    # Spices
-    "isabgol": "Isabgol", "psyllium": "Isabgol",
-    "ajwain": "Ajwain", "ajmo": "Ajwain",
-    "lahsun": "Garlic", "garlic": "Garlic", "lasan": "Garlic",
-    # Pulses
-    "chana": "Chickpea (Chana)", "chickpea": "Chickpea (Chana)",
-    "tur": "Pigeon Pea (Tur)", "tuver": "Pigeon Pea (Tur)",
-    "moong": "Green Gram (Moong)", "mag": "Green Gram (Moong)",
-    "urad": "Black Gram (Urad)", "adad": "Black Gram (Urad)",
 }
 def get_smart_crop_match(text):
     if not text: return None
@@ -533,8 +522,34 @@ def get_smart_crop_match(text):
 def get_crops_by_category(category):
     return [crop for crop, data in GUJARAT_CROPS.items() if data.get("category") == category]
 
+def get_city_from_positionstack(lat, lon):
+    """Reverse geocoding using Positionstack."""
+    if not POSITIONSTACK_API_KEY: return None
+    try:
+        url = "http://api.positionstack.com/v1/reverse"
+        params = {
+            "access_key": POSITIONSTACK_API_KEY,
+            "query": f"{lat},{lon}",
+            "limit": 1
+        }
+        r = requests.get(url, params=params, timeout=3)
+        if r.status_code == 200:
+            data = r.json()
+            if data.get('data'):
+                res = data['data'][0]
+                return res.get('locality') or res.get('city') or res.get('region') or res.get('county')
+    except Exception as e:
+        print(f"Positionstack error: {e}")
+    return None
+
 def get_nearest_city(lat, lon):
     """Find the nearest city to given coordinates"""
+    # 1. Try Positionstack first (Real Reverse Geocoding)
+    real_name = get_city_from_positionstack(lat, lon)
+    if real_name:
+        return real_name
+
+    # 2. Fallback to local dictionary
     nearest = None
     min_dist = float('inf')
     distances = []
@@ -584,4 +599,3 @@ def get_live_forecast(lat: float, lon: float, days: int = 7) -> dict:
 def get_nasa_satellite_image(lat, lon, dim=0.10):
     """NASA Satellite Image (Legacy - deprecated, use get_satellite_image instead)"""
     return None
-
