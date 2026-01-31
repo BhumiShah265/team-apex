@@ -1439,6 +1439,8 @@ with tab_dash:
                 overlay=True,
                 control=True
             ).add_to(m)
+
+            st_folium(m, width="100%", height=400)
             
             # Add the "My Location" button plugin
             folium.plugins.LocateControl(auto_start=False).add_to(m)
