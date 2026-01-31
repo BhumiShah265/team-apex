@@ -1747,7 +1747,7 @@ with tab_mandi:
             default_idx = 0
             if smart_match and smart_match in all_crops:
                 default_idx = all_crops.index(smart_match)
-                st.success(f"Matched: **{translate_dynamic(smart_match, st.session_state.language)}**")
+                st.caption(f"✅ Matched: {translate_dynamic(smart_match, st.session_state.language)}")
             elif "Groundnut (HPS)" in all_crops:
                 default_idx = all_crops.index("Groundnut (HPS)")
 
@@ -2487,8 +2487,21 @@ with tab_farm:
                 col_det1, col_det2 = st.columns(2)
                 
                 with col_det1:
-                    def_name_idx = get_all_crops().index(edit_crop['crop_name']) if is_edit and edit_crop['crop_name'] in get_all_crops() else 0
-                    f_name = st.selectbox(t.get("crop_name_label", "Crop Name"), get_all_crops(), index=def_name_idx, key="new_crop_name")
+                    # --- SMART SEARCH FOR CROP REGISTRATION ---
+                    search_label = "🔍 શોધો (દા.ત. Kapas, Gahu)" if st.session_state.language == 'gu' else "🔍 Smart Search (e.g. Kapas, Gahu)"
+                    farm_crop_search = st.text_input(search_label, placeholder="Type crop name...", key="farm_crop_search_input")
+                    
+                    smart_match = get_smart_crop_match(farm_crop_search)
+                    all_crops_list = get_all_crops()
+                    
+                    def_name_idx = 0
+                    if smart_match and smart_match in all_crops_list:
+                        def_name_idx = all_crops_list.index(smart_match)
+                        st.caption(f"✅ Matched: {translate_dynamic(smart_match, st.session_state.language)}")
+                    elif is_edit and edit_crop['crop_name'] in all_crops_list:
+                        def_name_idx = all_crops_list.index(edit_crop['crop_name'])
+                    
+                    f_name = st.selectbox(t.get("crop_name_label", "Crop Name"), all_crops_list, index=def_name_idx, key="new_crop_name", format_func=lambda x: translate_dynamic(x, st.session_state.language))
                 
                 with col_det2:
                     f_area = st.number_input(t.get("area_label", "Cultivated Area (Acres)"), min_value=0.1, value=float(edit_crop['area']) if is_edit else 1.0, step=0.5, key="new_crop_area")
@@ -2797,7 +2810,24 @@ with tab_hist:
         with st.form("history_form"):
             c1, c2 = st.columns(2)
             with c1:
-                h_crop = st.text_input(t.get('history_crop', 'Crop Name'), placeholder="e.g. Cotton")
+                # --- SMART SEARCH FOR HISTORY LOG ---
+                search_label = "🔍 શોધો (દા.ત. Kapas, Gahu)" if st.session_state.language == 'gu' else "🔍 Smart Search (e.g. Kapas, Gahu)"
+                hist_crop_search = st.text_input(search_label, placeholder="Type crop name...", key="hist_crop_search_input")
+                
+                smart_match = get_smart_crop_match(hist_crop_search)
+                all_crops_list = get_all_crops()
+                
+                def_hist_idx = 0
+                if smart_match and smart_match in all_crops_list:
+                    def_hist_idx = all_crops_list.index(smart_match)
+                    st.caption(f"✅ Matched: {translate_dynamic(smart_match, st.session_state.language)}")
+                
+                h_crop = st.selectbox(t.get('history_crop', 'Crop Name'), 
+                                     all_crops_list, 
+                                     index=def_hist_idx, 
+                                     key="hist_crop_select", 
+                                     format_func=lambda x: translate_dynamic(x, st.session_state.language))
+                
                 h_disease = st.text_input(t.get('history_disease', 'Past Diseases'), placeholder="e.g. Leaf Curl")
                 h_duration = st.text_input(t.get('history_duration', 'Time to First Fruit'), placeholder="e.g. 45 days")
             with c2:

@@ -497,21 +497,30 @@ CROP_PHONETIC_MAP = {
     # Fenugreek
     "methi": "Fenugreek (Methi)", "fenugreek": "Fenugreek (Methi)",
     # Castor
-    "arandi": "Castor Seeds", "castor": "Castor Seeds",
+    "arandi": "Castor Seeds", "castor": "Castor Seeds", "divela": "Castor Seeds",
     # Sesame
     "til": "Sesame (Til)", "sesame": "Sesame (Til)",
     # Potato
-    "aloo": "Potato", "potato": "Potato",
+    "aloo": "Potato", "potato": "Potato", "bataka": "Potato",
     # Onion
-    "piyaz": "Onion", "onion": "Onion", "kanda": "Onion",
+    "piyaz": "Onion", "onion": "Onion", "kanda": "Onion", "dungri": "Onion",
     # Tomato
-    "tamatar": "Tomato", "tomato": "Tomato",
+    "tamatar": "Tomato", "tomato": "Tomato", "tameta": "Tomato",
     # Mango
-    "aam": "Mango (Kesar)", "mango": "Mango (Kesar)", "kesar": "Mango (Kesar)",
+    "aam": "Mango (Kesar)", "mango": "Mango (Kesar)", "kesar": "Mango (Kesar)", "keri": "Mango (Kesar)",
     # Banana
     "kela": "Banana", "banana": "Banana",
-# Sugarcane
+    # Sugarcane
     "sherdi": "Sugarcane", "ganna": "Sugarcane", "sugarcane": "Sugarcane",
+    # Spices
+    "isabgol": "Isabgol", "psyllium": "Isabgol",
+    "ajwain": "Ajwain", "ajmo": "Ajwain",
+    "lahsun": "Garlic", "garlic": "Garlic", "lasan": "Garlic",
+    # Pulses
+    "chana": "Chickpea (Chana)", "chickpea": "Chickpea (Chana)",
+    "tur": "Pigeon Pea (Tur)", "tuver": "Pigeon Pea (Tur)",
+    "moong": "Green Gram (Moong)", "mag": "Green Gram (Moong)",
+    "urad": "Black Gram (Urad)", "adad": "Black Gram (Urad)",
 }
 def get_smart_crop_match(text):
     if not text: return None
