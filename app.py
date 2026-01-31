@@ -1862,6 +1862,13 @@ with tab_mandi:
         st.info(t.get('select_crop_mandi', '👆 Select crop and calculate best mandi to see arbitrage opportunities.'))
 
 with tab_chat:
+    # --- 0. Helper Functions ---
+    def submit_chat():
+        user_text = st.session_state.user_input_text_fixed
+        if user_text and user_text.strip():
+            st.session_state.chat_messages.append({"role": "user", "content": user_text.strip()})
+            st.session_state.user_input_text_fixed = ""
+    
     # Import chat database functions
     from utils.chat_db import (
         create_chat_session, save_message, get_chat_messages,
@@ -2124,22 +2131,18 @@ with tab_chat:
                 
                 with input_c1:
                     # Text Input
-                    user_text = st.text_input("Message", 
-                                            placeholder=t.get('ask_ai', 'Ask me anything about farming...'), 
-                                            label_visibility="collapsed", 
-                                            key="user_input_text_fixed")
+                    st.text_input("Message", 
+                                             placeholder=t.get('ask_ai', 'Ask me anything about farming...'), 
+                                             label_visibility="collapsed", 
+                                             key="user_input_text_fixed",
+                                             on_change=submit_chat)
                 
                 with input_c2:
                     # Microphone Input
                     audio_result = st.audio_input("Voice", label_visibility="collapsed", key="mic_fixed")
 
             # --- LOGIC: Process Input ---
-            if user_text and user_text != st.session_state.get('last_msg'):
-                st.session_state.last_msg = user_text
-                st.session_state.chat_messages.append({"role": "user", "content": user_text})
-                # Clear the input box for the next message
-                st.session_state.user_input_text_fixed = ""
-                st.rerun()
+
 
             # AI Response Logic (Check if last message was user)
             if (st.session_state.chat_messages and 
