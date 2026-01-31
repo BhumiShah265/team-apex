@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_javascript import st_javascript # <--- Added as requested
 import os
 import datetime
 import random
@@ -6,6 +7,21 @@ import requests
 from PIL import Image
 from streamlit_folium import st_folium
 import folium
+
+def get_user_location_js():
+    """
+    Runs JS in the browser to fetch location via ipwho.is (HTTPS supported).
+    Returns the JSON dictionary.
+    """
+    # JS code to fetch data securely
+    js_code = """
+    await fetch("https://ipwho.is/")
+        .then(response => response.json())
+        .then(data => data)
+    """
+    
+    # Run the JS and get the result
+    return st_javascript(js_code)
 
 # Core Backend Imports
 from ai_engine import get_severity_color, format_confidence
@@ -424,25 +440,26 @@ if browser_lat and browser_lon:
     except Exception as e:
         print(f"❌ GPS Error: {e}")
 
-# 2. IP Fallback (Only if no GPS yet)
+# 2. IP Fallback (Client-Side JS - Solves "The Dalles" Issue)
 if 'auto_city' not in st.session_state:
-    try:
-        r = requests.get("http://ip-api.com/json/", timeout=2)
-        if r.status_code == 200:
-            data = r.json()
-            # Only accept if IP is in India (avoids US Server location on Streamlit Cloud)
-            if data.get("countryCode") == "IN":
-                lat = data.get("lat")
-                lon = data.get("lon")
-                if lat and lon:
-                    nearest_city = get_nearest_city(lat, lon)
-                    st.session_state['auto_city'] = nearest_city
-                    st.session_state['auto_lat'] = lat
-                    st.session_state['auto_lon'] = lon
-                    st.session_state['location_detected'] = True
-                    st.session_state['location_source'] = 'ip'
-    except Exception:
-        pass
+    loc_data = get_user_location_js()
+    
+    if loc_data and isinstance(loc_data, dict) and loc_data.get('success'):
+        lat = loc_data.get('latitude')
+        lon = loc_data.get('longitude')
+        city = loc_data.get('city')
+        
+        if lat and lon:
+            # Map coords to nearest supported city
+            nearest_city = get_nearest_city(lat, lon)
+            
+            st.session_state['auto_city'] = nearest_city
+            st.session_state['auto_lat'] = lat
+            st.session_state['auto_lon'] = lon
+            st.session_state['location_detected'] = True
+            st.session_state['location_source'] = 'ip'
+            st.session_state['gps_coords_debug'] = f"IP: {city} (Est)"
+            st.rerun()
     
     # Default Fallback
     if 'auto_city' not in st.session_state:
