@@ -263,7 +263,8 @@ UI_TRANSLATIONS = {
         "footer_tagline": "Empowering the hands that feed the nation.",
         "profit_comparison": "Profit Comparison (Top 5)",
         "refreshing": "Updating dynamic data...",
-        "data_updated": "Weather & Soil data updated!"
+        "data_updated": "Weather & Soil data updated!",
+        "last_updated": "Last updated"
     },
     "gu": {
         "app_title": "કૃષિ-મિત્ર AI", "app_subtitle": "ગુજરાત માટે આગામી પેઢીની કૃષિ બુદ્ધિમત્તા",
@@ -338,7 +339,8 @@ UI_TRANSLATIONS = {
         "footer_tagline": "ખેડૂતનો સાચો સાથી, હવે આર્ટિફિશિયલ ઇન્ટેલિજન્સ સાથે.",
         "profit_comparison": "નફાની સરખામણી (શ્રેષ્ઠ ૫)",
         "refreshing": "ડેટા અપડેટ થઈ રહ્યો છે...",
-        "data_updated": "હવામાન અને જમીનનો ડેટા અપડેટ થયો!"
+        "data_updated": "હવામાન અને જમીનનો ડેટા અપડેટ થયો!",
+        "last_updated": "છેલ્લે અપડેટ"
     }
 }
 

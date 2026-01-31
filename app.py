@@ -1317,14 +1317,16 @@ with tab_dash:
             with st.spinner(t.get('refreshing', 'Updating...')):
                 import time
                 st.session_state.live_data = None
+                st.session_state.last_weather_update = datetime.datetime.now().strftime("%H:%M:%S")
                 time.sleep(0.8) # Small delay for "feel"
                 st.toast(t.get('data_updated', 'Data Updated!'), icon="✅")
                 st.rerun()
     with col_status:
         if is_active:
             # Show debug info about location detection
-            if 'gps_coords_debug' in st.session_state:
-                st.caption(f"📍 {st.session_state['gps_coords_debug']} | Source: {st.session_state.get('location_source', 'unknown')}")
+            last_upd = st.session_state.get('last_weather_update', datetime.datetime.now().strftime("%H:%M:%S"))
+            gps_info = st.session_state.get('gps_coords_debug', 'Inferred Location')
+            st.caption(f"📍 {gps_info} | {t.get('last_updated', 'Last updated')}: {last_upd}")
         else:
             st.caption(t.get('location_denied', '🚫 *Location Access Denied - Data Unavailable*'))
 
