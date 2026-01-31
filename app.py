@@ -407,7 +407,7 @@ if "user_profile" not in st.session_state:
         "name": "",
         "email": "",
         "phone": "",
-        "city": "Rajkot",
+        "city": "Ahmedabad",
         "notifications": {"weather": True, "mandi": False}
     }
 if 'show_profile_modal' not in st.session_state: st.session_state.show_profile_modal = False
@@ -415,7 +415,7 @@ if 'show_settings_modal' not in st.session_state: st.session_state.show_settings
 if 'show_logout_modal' not in st.session_state: st.session_state.show_logout_modal = False
 if 'dash_loc_perm' not in st.session_state: st.session_state.dash_loc_perm = None
 if 'manual_city_override' not in st.session_state: st.session_state.manual_city_override = False
-if 'manual_city_selection' not in st.session_state: st.session_state.manual_city_selection = "Rajkot"
+if 'manual_city_selection' not in st.session_state: st.session_state.manual_city_selection = "Ahmedabad"
 if 'show_login_modal' not in st.session_state: st.session_state.show_login_modal = False
 if 'show_signup_modal' not in st.session_state: st.session_state.show_signup_modal = False
 if 'show_forgot_password_modal' not in st.session_state: st.session_state.show_forgot_password_modal = False
@@ -503,9 +503,9 @@ if 'auto_city' not in st.session_state or st.session_state.get('location_source'
     
     # Default Fallback
     if 'auto_city' not in st.session_state:
-        st.session_state['auto_city'] = "Rajkot"
-        st.session_state['auto_lat'] = 22.3039
-        st.session_state['auto_lon'] = 70.8022
+        st.session_state['auto_city'] = "Ahmedabad"
+        st.session_state['auto_lat'] = 23.0225
+        st.session_state['auto_lon'] = 72.5714
         st.session_state['location_source'] = 'default'
 
 def get_live_data_for_city(city_name, lat=None, lon=None):
@@ -523,7 +523,7 @@ def get_live_data_for_city(city_name, lat=None, lon=None):
 def get_effective_city():
     # 1. Manual Override (Settings) - Highest Priority
     if st.session_state.get("manual_city_override"):
-        return st.session_state.get("manual_city_selection", "Rajkot")
+        return st.session_state.get("manual_city_selection", "Ahmedabad")
     
     # 2. GPS / Browser / IP Detection - High Priority
     # If the user successfully used GPS or IP was just found, this should override the profile default
@@ -532,10 +532,10 @@ def get_effective_city():
 
     # 3. Profile City (If logged in) - Medium Priority
     if st.session_state.user_profile.get("authenticated"):
-        return st.session_state.user_profile.get("city", "Rajkot")
+        return st.session_state.user_profile.get("city", "Ahmedabad")
     
     # 4. IP/Default - Low Priority
-    return st.session_state.get("auto_city", "Rajkot")
+    return st.session_state.get("auto_city", "Ahmedabad")
 
 selected_city = get_effective_city()
 
@@ -611,7 +611,7 @@ with col_brand:
 
 with col_profile:
     # Always show current location - full width
-    current_city = st.session_state.get('auto_city', 'Rajkot')
+    current_city = st.session_state.get('auto_city', 'Ahmedabad')
     loc_source = st.session_state.get('location_source', 'default')
     
     # Show current location with source icon - full width
@@ -733,7 +733,7 @@ if st.session_state.get('show_city_selector', False):
     st.markdown("### 📍 Change Your Location")
     
     # Show current location
-    current_city = st.session_state.get('auto_city', 'Rajkot')
+    current_city = st.session_state.get('auto_city', 'Ahmedabad')
     st.info(f"📍 Current location: **{current_city}**")
     
     from data_utils import get_all_cities, get_gps_from_city
@@ -845,7 +845,7 @@ def profile_modal():
     phone = st.text_input(t.get("phone_number", "Phone Number"), value=profile.get("phone") or "")
     
     all_cities = get_all_cities()
-    current_city = profile.get("city", "Rajkot")
+    current_city = profile.get("city", "Ahmedabad")
     try:
         city_idx = all_cities.index(current_city)
     except ValueError:
@@ -960,7 +960,7 @@ def settings_modal():
         if use_manual:
             # Temporary Override UI
             st.markdown("---")
-            curr = st.session_state.get("manual_city_selection", "Rajkot")
+            curr = st.session_state.get("manual_city_selection", "Ahmedabad")
             try: idx = all_cities.index(curr)
             except: idx = 0
             
@@ -973,7 +973,7 @@ def settings_modal():
             if st.session_state.user_profile.get("authenticated"):
                 st.markdown("---")
                 st.markdown("**Primary Farm Location** (Updates Profile)")
-                curr = st.session_state.user_profile.get("city", "Rajkot")
+                curr = st.session_state.user_profile.get("city", "Ahmedabad")
                 try: idx = all_cities.index(curr)
                 except: idx = 0
                 sel_city = st.selectbox("Profile City", all_cities, index=idx, key="prof_city_sel", label_visibility="collapsed")
@@ -1029,7 +1029,7 @@ def settings_modal():
             from utils.auth_db import update_user_profile
             prof = st.session_state.user_profile
             # Use the temp selected city from the dropdown above
-            new_city_val = st.session_state.get("temp_profile_city", prof.get("city", "Rajkot"))
+            new_city_val = st.session_state.get("temp_profile_city", prof.get("city", "Ahmedabad"))
             
             # Update DB
             update_user_profile(prof["id"], prof["name"], prof["email"], prof.get("phone",""), new_city_val)
@@ -1079,7 +1079,7 @@ def login_modal():
                     "name": result["name"],
                     "email": result["email"],
                     "phone": result.get("phone") or "",
-                    "city": result.get("city") or "Rajkot",
+                    "city": result.get("city") or "Ahmedabad",
                     "notifications": {
                         "weather": bool(result.get("notif_weather", 1)),
                         "mandi": bool(result.get("notif_mandi", 0))
@@ -1178,7 +1178,7 @@ def signup_modal():
     password = st.text_input(t.get("password", "Password"), type="password")
     
     all_cities = get_all_cities()
-    auto_city = st.session_state.get('auto_city', "Rajkot")
+    auto_city = st.session_state.get('auto_city', "Ahmedabad")
     try:
         city_idx = all_cities.index(auto_city)
     except ValueError:
@@ -1409,7 +1409,7 @@ with tab_dash:
  
         with st.container(border=True):
             # We use the coordinates from live_data if available
-            lat_v, lon_v = (coords['lat'], coords['lon']) if coords else (22.3039, 70.8022)
+            lat_v, lon_v = (coords['lat'], coords['lon']) if coords else (23.0225, 72.5714)
             
             # Create an interactive Folium map
             m = folium.Map(location=[lat_v, lon_v], zoom_start=zoom_level, control_scale=True, tiles=None)
@@ -2188,7 +2188,7 @@ with tab_chat:
                                     target_crop = st.session_state.user_profile.get("preferred_crop", "Groundnut (HPS)")
 
                                 context = {
-                                    "city": selected_city if 'selected_city' in locals() else st.session_state.user_profile.get("city", "Rajkot"),
+                                    "city": selected_city if 'selected_city' in locals() else st.session_state.user_profile.get("city", "Ahmedabad"),
                                     "crop": target_crop,
                                     "temp": weather.get("temp", 30),
                                     "crop_history": st.session_state.crop_history

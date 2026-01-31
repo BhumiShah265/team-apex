@@ -397,7 +397,10 @@ def get_live_field_data(city_name: str, lat: float = None, lon: float = None) ->
     """Master function to get all dashboard data"""
     if not lat:
         gps = get_gps_from_city(city_name)
-        lat, lon = gps['lat'], gps['lon']
+        if gps:
+            lat, lon = gps['lat'], gps['lon']
+        else:
+            lat, lon = 23.0225, 72.5714 # Default to Ahmedabad
         
     return {
         "coordinates": {"lat": lat, "lon": lon},
@@ -412,7 +415,7 @@ def get_live_field_data(city_name: str, lat: float = None, lon: float = None) ->
 
 def get_gps_from_city(city_name):
     if city_name in GUJARAT_CITIES: return GUJARAT_CITIES[city_name]
-    return GUJARAT_CITIES["Rajkot"]
+    return None
 
 def get_all_cities(): return sorted(GUJARAT_CITIES.keys())
 def get_all_crops(): return sorted(GUJARAT_CROPS.keys())
