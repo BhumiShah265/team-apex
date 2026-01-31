@@ -1470,7 +1470,7 @@ with tab_diag:
                     image = Image.open(image_data)
                     
                     # 2. Force Gemini API Call
-                    with st.spinner("🤖 Asking Gemini AI (Online Mode)..."):
+                    with st.spinner("🤖 Asking AI (Online Mode)..."):
                         # We try Gemini FIRST. We do not touch TFLite yet.
                         try:
                             from gemini_engine import analyze_crop_image
@@ -1480,9 +1480,14 @@ with tab_diag:
                             ctx = {"crop_history": st.session_state.crop_history}
                             gemini_result = analyze_crop_image(img_bytes, st.session_state.language, ctx)
                             
-                            # Check if Gemini actually returned a result
-                            if gemini_result and gemini_result.get('class') != "Unknown":
-                                st.success("✅ Analysis Complete (via Gemini AI)")
+                            # Check if Gemini actually returned a valid result
+                            # gemini_engine returns 'disease' and 'error' keys
+                            is_error = gemini_result.get('error', False)
+                            disease_name = gemini_result.get('disease', '')
+                            is_api_error = disease_name.startswith('Error:') or is_error
+                            
+                            if gemini_result and not is_api_error and disease_name != "Unknown":
+                                st.success("✅ Analysis Complete (via AI)")
                                 
                                 # Convert Gemini result to expected format
                                 conf_str = gemini_result.get('confidence', 'Medium')
@@ -1493,17 +1498,17 @@ with tab_diag:
                                 prevention = gemini_result.get('prevention', [])
                                 
                                 diagnosis = {
-                                    "disease": gemini_result.get('disease', 'Unknown'),
+                                    "disease": disease_name,
                                     "confidence": conf_numeric,
                                     "severity": gemini_result.get('severity', 'Medium'),
-                                    "all_predictions": [(gemini_result.get('disease', 'Unknown'), conf_numeric)],
+                                    "all_predictions": [(disease_name, conf_numeric)],
                                     "is_mock": False,
                                     "gemini_raw": gemini_result
                                 }
                                 
                                 fusion_advice = {
                                     "enhanced_confidence": conf_numeric,
-                                    "fusion_factor": f"AI Analysis via Gemini Vision",
+                                    "fusion_factor": f"AI Analysis via Vision API",
                                     "treatment_advice": treatment,
                                     "urgency": "High" if gemini_result.get('severity') in ['Severe', 'Critical'] else "Medium",
                                     "prevention": prevention
@@ -1513,16 +1518,16 @@ with tab_diag:
                                 st.session_state['fusion_advice'] = fusion_advice
                                 
                                 # Display Results
-                                st.markdown(f"### 🌿 Disease: **{gemini_result.get('disease', 'Unknown')}**")
+                                st.markdown(f"### 🌿 Disease: **{disease_name}**")
                                 st.markdown(f"**Confidence:** {conf_numeric}%")
-                                st.markdown(f"**Treatment:** {gemini_result.get('treatment', ['Consult an expert.'])}")
+                                st.markdown(f"**Treatment:** {treatment[0] if treatment else 'Consult an expert.'}")
                                 
                             else:
-                                # If Gemini returns empty/error, ONLY THEN use TFLite
-                                raise Exception("Gemini returned no data")
+                                # If Gemini returns error/empty, ONLY THEN use TFLite
+                                raise Exception(gemini_result.get('disease', 'Unknown API Error'))
 
                         except Exception as e:
-                            st.error(f"⚠️ Gemini Connection Failed: {e}")
+                            st.error(f"⚠️ AI Connection Failed: {e}")
                             st.warning("⚠️ Switching to Offline Emergency Backup (TFLite)...")
                             
                             # --- FALLBACK: TFLITE ---
