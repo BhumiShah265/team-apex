@@ -1138,8 +1138,28 @@ def signup_modal():
         selected_city_val = st.selectbox(f"📍 {t.get('city', 'Your City')}", all_cities, index=city_idx, format_func=fmt_city, key="signup_city")
         
         if st.button(t.get("signup_btn", "Send Verification OTP"), type="primary", use_container_width=True):
+            import re
+            
+            # 1. Basic Empty Checks
             if not name or not email or not password or not phone:
                 st.error("Please fill in all required fields.")
+            
+            # 2. Name Validation
+            elif len(name.strip()) < 2:
+                st.error("Please enter a valid full name.")
+            
+            # 3. Email Validation
+            elif not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+                st.error("Please enter a valid email address.")
+            
+            # 4. Phone Validation (10 digits)
+            elif not (phone.isdigit() and len(phone) == 10):
+                st.error("Please enter a valid 10-digit phone number.")
+            
+            # 5. Password Validation
+            elif len(password) < 6:
+                st.error("Password must be at least 6 characters long.")
+            
             else:
                 from utils.auth_db import check_email_exists, generate_otp
                 from utils.email_utils import send_otp_email
@@ -1150,7 +1170,7 @@ def signup_modal():
                 else:
                     success, otp_msg, otp = generate_otp(email, check_exists=False)
                     if success:
-                        e_success, e_msg = send_otp_email(email, otp, name)
+                        e_success, e_msg = send_otp_email(email, otp, name, subject="🔐 Krishi-Mitra AI - Account Verification OTP")
                         if e_success:
                             st.session_state.signup_data = {
                                 "name": name,
