@@ -628,6 +628,9 @@ with col_profile:
             if st.button("Login", use_container_width=True): 
                 st.session_state.show_login_modal = True
                 st.rerun()
+            if st.button("Sign Up", use_container_width=True):
+                st.session_state.show_signup_modal = True
+                st.rerun()
             if st.button("Settings", use_container_width=True):
                 st.session_state.show_settings_modal = True
                 st.rerun()
@@ -1048,7 +1051,7 @@ def forgot_password_modal():
                 if success:
                     # In a real app, send_otp_email would be used
                     from utils.email_utils import send_otp_email
-                    send_otp_email(email, otp, user_data['name'])
+                    send_otp_email(email, otp, user_data['name'], subject="🔐 Krishi-Mitra AI - Password Reset OTP")
                     st.session_state.reset_email = email
                     st.session_state.show_forgot_password_modal = False
                     st.session_state.show_reset_password_modal = True
@@ -1090,53 +1093,101 @@ def reset_password_modal():
 
 @st.dialog(t.get("signup", "Sign Up"))
 def signup_modal():
-    st.markdown(f"### {t.get('signup_title', 'Create Account')}")
+    if "signup_step" not in st.session_state:
+        st.session_state.signup_step = "form"
     
-    # --- Profile Photo Upload ---
-    st.markdown("**📸 Profile Photo (Max 2MB)**")
-    profile_img = st.file_uploader("Upload your photo", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
-    
-    b64_img = None
-    if profile_img:
-        if profile_img.size > 2 * 1024 * 1024: # 2MB Limit
-            st.error("❌ File too large. Please upload an image smaller than 2MB.")
-            profile_img = None
-        else:
-            # Preview the selected image
-            st.image(profile_img, width=100)
-            import base64
-            b64_img = base64.b64encode(profile_img.getvalue()).decode()
-
-    name = st.text_input(t.get("full_name", "Full Name"))
-    email = st.text_input(t.get("email", "Email Address"))
-    phone = st.text_input(t.get("phone_number", "Phone Number (10 Digits)"), max_chars=10)
-    password = st.text_input(t.get("password", "Password"), type="password")
-    
-    all_cities = get_all_cities()
-    auto_city = st.session_state.get('auto_city', "Rajkot")
-    try:
-        city_idx = all_cities.index(auto_city)
-    except ValueError:
-        city_idx = 0
+    if st.session_state.signup_step == "form":
+        st.markdown(f"### {t.get('signup_title', 'Create Account')}")
         
-    def fmt_city(x):
-        return translate_dynamic(x, st.session_state.language)
+        # --- Profile Photo Upload ---
+        st.markdown("**📸 Profile Photo (Max 2MB)**")
+        profile_img = st.file_uploader("Upload your photo", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
         
-    selected_city_val = st.selectbox(f"📍 {t.get('city', 'Your City')}", all_cities, index=city_idx, format_func=fmt_city)
-    
-    if st.button(t.get("signup_btn", "Create Account"), type="primary", use_container_width=True):
-        if not name or not email or not password or not phone:
-            st.error("Please fill in all required fields.")
-        else:
-            # Pass b64_img to your registration function
-            success, message = register_user(name, email, password, phone, selected_city_val, profile_pic=b64_img)
-            if success:
-                st.success("Account created! Please login.")
-                st.session_state.show_signup_modal = False
-                st.session_state.show_login_modal = True
-                st.rerun()
+        b64_img = None
+        if profile_img:
+            if profile_img.size > 2 * 1024 * 1024:
+                st.error("❌ File too large. Please upload an image smaller than 2MB.")
             else:
-                st.error(message)
+                st.image(profile_img, width=100)
+                import base64
+                b64_img = base64.b64encode(profile_img.getvalue()).decode()
+
+        name = st.text_input(t.get("full_name", "Full Name"), key="signup_name")
+        email = st.text_input(t.get("email", "Email Address"), key="signup_email")
+        phone = st.text_input(t.get("phone_number", "Phone Number (10 Digits)"), max_chars=10, key="signup_phone")
+        password = st.text_input(t.get("password", "Password"), type="password", key="signup_password")
+        
+        all_cities = get_all_cities()
+        auto_city = st.session_state.get('auto_city', "Rajkot")
+        try:
+            city_idx = all_cities.index(auto_city)
+        except ValueError:
+            city_idx = 0
+            
+        def fmt_city(x):
+            return translate_dynamic(x, st.session_state.language)
+            
+        selected_city_val = st.selectbox(f"📍 {t.get('city', 'Your City')}", all_cities, index=city_idx, format_func=fmt_city, key="signup_city")
+        
+        if st.button(t.get("signup_btn", "Send Verification OTP"), type="primary", use_container_width=True):
+            if not name or not email or not password or not phone:
+                st.error("Please fill in all required fields.")
+            else:
+                from utils.auth_db import check_email_exists, generate_otp
+                from utils.email_utils import send_otp_email
+                
+                exists, _ = check_email_exists(email)
+                if exists:
+                    st.error("Email already registered. Please login instead.")
+                else:
+                    success, otp_msg, otp = generate_otp(email, check_exists=False)
+                    if success:
+                        e_success, e_msg = send_otp_email(email, otp, name)
+                        if e_success:
+                            st.session_state.signup_data = {
+                                "name": name,
+                                "email": email,
+                                "phone": phone,
+                                "password": password,
+                                "city": selected_city_val,
+                                "profile_pic": b64_img
+                            }
+                            st.session_state.signup_step = "otp"
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to send email: {e_msg}")
+                    else:
+                        st.error(otp_msg)
+    
+    elif st.session_state.signup_step == "otp":
+        st.markdown(f"### {t.get('verify_email', 'Verify Your Email')}")
+        st.info(f"An OTP has been sent to **{st.session_state.signup_data['email']}**")
+        
+        otp_input = st.text_input("Enter 6-Digit OTP", max_chars=6)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Verify & Register", type="primary", use_container_width=True):
+                from utils.auth_db import verify_otp, register_user
+                valid, msg = verify_otp(st.session_state.signup_data['email'], otp_input)
+                if valid:
+                    d = st.session_state.signup_data
+                    success, message = register_user(d['name'], d['email'], d['password'], d['phone'], d['city'], profile_pic=d['profile_pic'])
+                    if success:
+                        st.success("Account verified and created successfully!")
+                        st.session_state.signup_step = "form" # Reset for next time
+                        st.session_state.show_signup_modal = False
+                        st.session_state.show_login_modal = True
+                        st.rerun()
+                    else:
+                        st.error(message)
+                else:
+                    st.error(msg)
+        
+        with col2:
+            if st.button("Back", use_container_width=True):
+                st.session_state.signup_step = "form"
+                st.rerun()
 # ... inside the popover menu ...
 
 # ==========================================

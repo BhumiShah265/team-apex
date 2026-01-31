@@ -283,21 +283,23 @@ def check_email_exists(email: str) -> tuple:
         return False, None
 
 
-def generate_otp(email: str) -> tuple:
+def generate_otp(email: str, check_exists: bool = True) -> tuple:
     """
-    Generate and store OTP for password reset.
+    Generate and store OTP for password reset or registration.
     
     Args:
         email: User's email address
+        check_exists: Whether to verify if the email is already registered
         
     Returns:
         tuple: (success: bool, message: str, otp: str or None)
     """
     try:
-        # Check if email exists
-        exists, user_data = check_email_exists(email)
-        if not exists:
-            return False, "Email not registered!", None
+        # Check if email exists if requested
+        if check_exists:
+            exists, user_data = check_email_exists(email)
+            if not exists:
+                return False, "Email not registered!", None
         
         # Generate secure OTP
         otp = ''.join(str(secrets.randbelow(10)) for _ in range(OTP_LENGTH))

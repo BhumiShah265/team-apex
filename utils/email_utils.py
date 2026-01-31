@@ -42,14 +42,15 @@ SENDER_PASSWORD = os.environ.get('SENDER_PASSWORD', '')
 CONSOLE_MODE = os.environ.get('EMAIL_CONSOLE_MODE', 'false').lower() == 'true'
 
 
-def send_otp_email(email: str, otp: str, user_name: str = "Farmer") -> tuple:
+def send_otp_email(email: str, otp: str, user_name: str = "Farmer", subject: str = "🔐 Krishi-Mitra AI - OTP Verification") -> tuple:
     """
-    Send OTP email to user for password reset.
+    Send OTP email to user for registration or password reset.
     
     Args:
         email: Recipient's email address
         otp: One-time password to send
         user_name: User's name for personalization
+        subject: Email subject line
         
     Returns:
         tuple: (success: bool, message: str)
@@ -72,7 +73,7 @@ def send_otp_email(email: str, otp: str, user_name: str = "Farmer") -> tuple:
     try:
         # Create email message
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = '🔐 Krishi-Mitra AI - Password Reset OTP'
+        msg['Subject'] = subject
         msg['From'] = SENDER_EMAIL
         msg['To'] = email
         
@@ -98,11 +99,11 @@ def send_otp_email(email: str, otp: str, user_name: str = "Farmer") -> tuple:
             <div class="container">
                 <div class="header">
                     <h1>🌱 Krishi-Mitra AI</h1>
-                    <p>Password Reset</p>
+                    <p>Security Verification</p>
                 </div>
                 <div class="content">
                     <p>Dear {user_name},</p>
-                    <p>We received a request to reset your password. Please use the following OTP code:</p>
+                    <p>To verify your identity, please use the following OTP code:</p>
                     
                     <div class="otp-box">{otp}</div>
                     
