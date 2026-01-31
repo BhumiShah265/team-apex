@@ -1169,23 +1169,23 @@ def signup_modal():
                         st.error("Email already registered. Please login instead.")
                     else:
                         success, otp_msg, otp = generate_otp(email, check_exists=False)
-                    if success:
-                        e_success, e_msg = send_otp_email(email, otp, name, subject="🔐 Krishi-Mitra AI - Account Verification OTP")
-                        if e_success:
-                            st.session_state.signup_data = {
-                                "name": name,
-                                "email": email,
-                                "phone": phone,
-                                "password": password,
-                                "city": selected_city_val,
-                                "profile_pic": b64_img
-                            }
-                            st.session_state.signup_step = "otp"
-                            st.rerun()
+                        if success:
+                            e_success, e_msg = send_otp_email(email, otp, name, subject="🔐 Krishi-Mitra AI - Account Verification OTP")
+                            if e_success:
+                                st.session_state.signup_data = {
+                                    "name": name,
+                                    "email": email,
+                                    "phone": phone,
+                                    "password": password,
+                                    "city": selected_city_val,
+                                    "profile_pic": b64_img
+                                }
+                                st.session_state.signup_step = "otp"
+                                st.rerun()
+                            else:
+                                st.error(f"Failed to send email: {e_msg}")
                         else:
-                            st.error(f"Failed to send email: {e_msg}")
-                    else:
-                        st.error(otp_msg)
+                            st.error(otp_msg)
     
     elif st.session_state.signup_step == "otp":
         st.markdown(f"### {t.get('verify_email', 'Verify Your Email')}")
