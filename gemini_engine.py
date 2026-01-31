@@ -30,7 +30,7 @@ genai.configure(api_key=GOOGLE_API_KEY)
 # Using 'gemini-1.5-flash' because it is fast and free-tier friendly
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-def analyze_crop_image(image):
+def analyze_crop_image(image, *args, **kwargs):
     """
     Sends the leaf image to Gemini for diagnosis.
     """
