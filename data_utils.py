@@ -567,7 +567,7 @@ def get_nearest_city(lat, lon):
     for i, (city, dist) in enumerate(distances[:5], 1):
         print(f"  {i}. {city}: {dist:.2f} km")
     
-    return nearest or "Rajkot"
+    return nearest or f"Loc: {lat:.2f}, {lon:.2f}"
 
 # ============================================================
 # WEATHER FORECAST

@@ -12,20 +12,26 @@ def get_user_location_js():
     # Standard fetch with promise chain - safer for inline execution
     js_code = """
     (async () => {
-        try {
-            const r = await fetch("https://ipwho.is/");
-            const d = await r.json();
-            if (d.success !== false) return d;
-        } catch (e) { console.error("ipwho error", e); }
-        try {
-            const r = await fetch("https://ipapi.co/json/");
-            const d = await r.json();
-            if (!d.error) return d;
-        } catch (e) { console.error("ipapi error", e); }
+        const fetchIP = async (url) => {
+            try {
+                const r = await fetch(url);
+                const d = await r.json();
+                return d;
+            } catch (e) { return null; }
+        };
+
+        // 1. Try ipapi.co (Very reliable)
+        let d = await fetchIP("https://ipapi.co/json/");
+        if (d && d.city) return { city: d.city, latitude: d.latitude, longitude: d.longitude };
+
+        // 2. Fallback to ipwho.is
+        d = await fetchIP("https://ipwho.is/");
+        if (d && d.success !== false) return d;
+
         return null;
     })();
     """
-    return st_javascript(js_code, key="geo_ip_fetch_v4")
+    return st_javascript(js_code, key="geo_ip_fetch_v5")
 
 # Core Backend Imports
 from ai_engine import get_severity_color, format_confidence
@@ -470,7 +476,9 @@ if 'auto_city' not in st.session_state or st.session_state.get('location_source'
     
     # Run the JS Command
     # Only show toast if we are genuinely waiting, not on every rerun
-    if 'geo_ip_fetch_v4' not in st.session_state:
+    # Run the JS Command
+    # Only show toast if we are genuinely waiting, not on every rerun
+    if 'geo_ip_fetch_v5' not in st.session_state:
         st.toast("🛰️ Connecting to satellite...", icon="🌍")
 
     loc_data = get_user_location_js()
@@ -481,16 +489,13 @@ if 'auto_city' not in st.session_state or st.session_state.get('location_source'
         lon = loc_data.get('longitude')
         detected_ip_city = loc_data.get('city')
         
-        # Power Move: Map to our nearest city
-        nearest_city = get_nearest_city(lat, lon)
-        
-        # FIX: If mapping fails (returns Rajkot) but we have a real IP city, use the IP city!
-        if nearest_city == "Rajkot" and detected_ip_city and detected_ip_city != "Rajkot":
-            nearest_city = detected_ip_city
-        
-        st.session_state['auto_city'] = nearest_city
+        # FORCE UPDATE: Use the detected city directly
+        st.session_state['auto_city'] = detected_ip_city
+        st.session_state['auto_lat'] = lat
+        st.session_state['auto_lon'] = lon
         st.session_state['location_source'] = 'ip'
-        st.session_state['gps_coords_debug'] = f"Estimated: {detected_ip_city}"
+        st.session_state['gps_coords_debug'] = f"Detected: {detected_ip_city}"
+        
         # We only rerun if the city we just found is different from the current one
         if st.session_state.get('last_detected_ip') != nearest_city:
             st.session_state['last_detected_ip'] = nearest_city
