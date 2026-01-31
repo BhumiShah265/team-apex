@@ -319,9 +319,10 @@ def verify_otp(email: str, otp: str) -> tuple:
         return False, f"Database error: {str(e)}"
 
 
-def update_password(email: str, new_password: str) -> bool:
-    is_valid, _ = validate_password_policy(new_password)
-    if not is_valid: return False
+def update_password(email: str, new_password: str) -> tuple:
+    is_valid, errors = validate_password_policy(new_password)
+    if not is_valid: 
+        return False, "Password requirements not met:\n- " + "\n- ".join(errors)
     
     try:
         hashed_password = hash_password(new_password)
@@ -335,10 +336,12 @@ def update_password(email: str, new_password: str) -> bool:
         success = cursor.rowcount > 0
         conn.commit()
         conn.close()
-        return success
+        if success:
+            return True, "Password updated successfully!"
+        return False, "Could not find account to update."
     except Exception as e:
         print(f"[Auth DB] Error updating password: {e}")
-        return False
+        return False, f"Database error: {str(e)}"
 
 
 def delete_otp(email: str) -> bool:

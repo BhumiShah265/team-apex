@@ -12,7 +12,6 @@ from ai_engine import get_severity_color, format_confidence
 from bhashini_layer import get_translations, translate_dynamic, speak_gujarati, speak_english, text_to_speech, translate_to_english
 from utils.backend_utils import get_weather, get_mandi_prices
 from utils.components import footer_buttons
-from utils.farm_db import update_user_crop
 # Advanced AI & Data Backend Imports
 from gemini_engine import chat_with_krishi_mitra, analyze_crop_image, transcribe_audio, get_ai_fusion_advice, generate_title_from_message
 from data_utils import (
