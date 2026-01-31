@@ -248,6 +248,28 @@ def apply_modern_theme():
         margin: 0 auto !important;
     }
 
+    /* Refresh Button Spin Animation */
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    div[data-testid="stColumn"] button[key="refresh_weather"]:hover {
+        animation: spin 1s linear infinite;
+    }
+    
+    /* Make the 🔄 button more subtle */
+    button[key="refresh_weather"] {
+        background: transparent !important;
+        border: 1px solid var(--border-glass) !important;
+        border-radius: 50% !important;
+        width: 40px !important;
+        height: 40px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 0 !important;
+    }
+
     /* Target buttons inside the popover body - use theme colors */
     div[data-testid="stPopoverBody"] button {
         background-color: rgba(46, 204, 113, 0.1) !important;
@@ -1292,8 +1314,12 @@ with tab_dash:
     col_refresh, col_status = st.columns([0.1, 0.9])
     with col_refresh:
         if st.button("🔄", key="refresh_weather", help="Refresh weather data"):
-            st.session_state.live_data = None
-            st.rerun()
+            with st.spinner(t.get('refreshing', 'Updating...')):
+                import time
+                st.session_state.live_data = None
+                time.sleep(0.8) # Small delay for "feel"
+                st.toast(t.get('data_updated', 'Data Updated!'), icon="✅")
+                st.rerun()
     with col_status:
         if is_active:
             # Show debug info about location detection

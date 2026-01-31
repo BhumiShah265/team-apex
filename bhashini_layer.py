@@ -261,7 +261,9 @@ UI_TRANSLATIONS = {
         "verify_otp": "Verify OTP", "new_password": "New Password", "confirm_password": "Confirm Password",
         "password_reset_success": "Password reset successfully!",
         "footer_tagline": "Empowering the hands that feed the nation.",
-        "profit_comparison": "Profit Comparison (Top 5)"
+        "profit_comparison": "Profit Comparison (Top 5)",
+        "refreshing": "Updating dynamic data...",
+        "data_updated": "Weather & Soil data updated!"
     },
     "gu": {
         "app_title": "કૃષિ-મિત્ર AI", "app_subtitle": "ગુજરાત માટે આગામી પેઢીની કૃષિ બુદ્ધિમત્તા",
@@ -334,7 +336,9 @@ UI_TRANSLATIONS = {
         "analyzing_health": "પાંદડાના ક્લોરોફિલ અને સ્વાસ્થ્યનું વિશ્લેષણ કરી રહ્યું છે...", "chlorophyll": "ક્લોરોફિલ", "loc_permission_needed": "માઇક્રો-ક્લાઇમેટ ડેટા માટે લોકેશન એક્સેસ જરૂરી છે.",
         "maturity": "પરિપક્વતા", "sown": "વાવેલું", "delete": "કાઢી નાખો", "edit": "ફેરફાર કરો", "options": "વિકલ્પો", "confirm_delete": "શું તમે ખરેખર {name} કાઢી નાખવા માંગો છો?", "yes": "હા", "no": "ના", "update": "સુધારો", "register": "નોંધણી કરો", "cancel": "રદ કરો",
         "footer_tagline": "ખેડૂતનો સાચો સાથી, હવે આર્ટિફિશિયલ ઇન્ટેલિજન્સ સાથે.",
-        "profit_comparison": "નફાની સરખામણી (શ્રેષ્ઠ ૫)"
+        "profit_comparison": "નફાની સરખામણી (શ્રેષ્ઠ ૫)",
+        "refreshing": "ડેટા અપડેટ થઈ રહ્યો છે...",
+        "data_updated": "હવામાન અને જમીનનો ડેટા અપડેટ થયો!"
     }
 }
 
