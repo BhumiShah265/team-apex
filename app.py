@@ -606,7 +606,7 @@ with col_profile:
     """, unsafe_allow_html=True)
     
     # Hidden button to trigger city selector modal via JS bridge if needed
-    if st.button("📍", key="secret_city_trigger", help="Change City", label_visibility="collapsed"):
+    if st.button("📍", key="secret_city_trigger", help="Change City"):
         st.session_state.show_city_selector = True
         st.rerun()
 
