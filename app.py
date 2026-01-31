@@ -110,8 +110,9 @@ def apply_modern_theme():
 
     /* Ensure JS iframes are not hidden */
     iframe {
-        height: 0px !important;
-        width: 0px !important;
+        height: 1px !important;
+        width: 1px !important;
+        opacity: 0 !important;
         border: none !important;
         position: absolute !important;
     }
@@ -453,6 +454,10 @@ if 'auto_city' not in st.session_state or st.session_state.get('location_source'
         # Power Move: Map to our nearest city
         nearest_city = get_nearest_city(lat, lon)
         
+        # FIX: If mapping fails (returns Rajkot) but we have a real IP city, use the IP city!
+        if nearest_city == "Rajkot" and detected_ip_city and detected_ip_city != "Rajkot":
+            nearest_city = detected_ip_city
+        
         st.session_state['auto_city'] = nearest_city
         st.session_state['location_source'] = 'ip'
         st.session_state['gps_coords_debug'] = f"Estimated: {detected_ip_city}"
@@ -485,9 +490,9 @@ def get_effective_city():
     if st.session_state.get("manual_city_override"):
         return st.session_state.get("manual_city_selection", "Rajkot")
     
-    # 2. GPS / Browser Detection - High Priority
-    # If the user successfully used GPS, this should override the profile default
-    if st.session_state.get("location_source") == 'browser' and st.session_state.get("auto_city"):
+    # 2. GPS / Browser / IP Detection - High Priority
+    # If the user successfully used GPS or IP was just found, this should override the profile default
+    if st.session_state.get("location_source") in ['browser', 'ip'] and st.session_state.get("auto_city"):
         return st.session_state.get("auto_city")
 
     # 3. Profile City (If logged in) - Medium Priority
