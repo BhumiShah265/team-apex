@@ -1842,48 +1842,80 @@ with tab_chat:
     if 'voice_interaction' not in st.session_state: st.session_state.voice_interaction = False
     if 'mic_key' not in st.session_state: st.session_state.mic_key = 0
 
-    # --- 2. CSS FIXES (The "Anti-Shift" Fix) ---
+    # --- 2. PREMIUM CSS OVERHAUL ---
     st.markdown("""
     <style>
-    /* 1. FORCE AUDIO WIDGET LAYOUT LOCK */
+    /* 1. Global Chat Container (Glassmorphism) */
+    [data-testid="stVerticalBlock"] > div:has(div[data-testid="stChatContainer"]) {
+        background: rgba(255, 255, 255, 0.03) !important;
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        border-radius: 24px !important;
+        padding: 20px !important;
+        backdrop-filter: blur(10px);
+    }
+
+    /* 2. Enhanced Chat Bubbles */
+    [data-testid="stChatMessage"] {
+        background-color: transparent !important;
+        padding: 0.8rem 0 !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.03) !important;
+    }
+    
+    [data-testid="stChatMessageContent"] {
+        font-size: 0.95rem !important;
+        line-height: 1.6 !important;
+        color: #E2E8F0 !important;
+    }
+
+    /* User Message Styling */
+    [data-testid="stChatMessage"]:has(img[alt="user"]) {
+        background: rgba(46, 204, 113, 0.05) !important;
+        border-radius: 16px !important;
+        padding: 1rem !important;
+        margin-bottom: 1rem !important;
+        border: 1px solid rgba(46, 204, 113, 0.1) !important;
+    }
+
+    /* Assistant Message Styling */
+    [data-testid="stChatMessage"]:has(img[alt="assistant"]) {
+        padding: 1rem !important;
+        margin-bottom: 1rem !important;
+    }
+
+    /* 3. Modern Input Area */
+    .chat-input-container {
+        display: flex;
+        gap: 12px;
+        align-items: flex-end;
+        background: rgba(255, 255, 255, 0.03);
+        padding: 12px;
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        margin-top: 15px;
+    }
+
     [data-testid="stAudioInput"] {
         background-color: rgba(255, 255, 255, 0.05) !important;
         border-radius: 12px !important;
-        padding: 4px !important;
-        /* This prevents internal elements from jumping */
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        height: 50px !important; /* Force fixed height */
-        overflow: visible !important; /* Allow buttons to be seen */
-    }
-    
-    /* 2. Target the internal buttons (Record & Delete) to stop them moving up */
-    [data-testid="stAudioInput"] button {
-        position: static !important; /* Disable relative/absolute shifts */
-        transform: none !important;  /* Disable Y-axis transforms */
-        margin: 0 !important;        /* Remove random margins */
-        display: inline-flex !important;
-        align-items: center !important;
-        height: 40px !important;
+        padding: 2px !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
     }
 
-    /* 3. Make the Delete Button RED, VISIBLE and SHIFTED DOWN */
-    [data-testid="stAudioInput"] button[kind="secondary"] {
-        color: #FF4B4B !important;
-        border: 1px solid #FF4B4B !important;
-        background-color: rgba(255, 75, 75, 0.1) !important;
-        opacity: 1 !important;
-        z-index: 99 !important; /* Force it on top */
-        transform: translateY(8px) !important; /* Shift it more down */
+    /* 4. History List Polishing */
+    .history-card {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+        padding: 2px;
+        margin-bottom: 8px;
+        transition: all 0.3s ease;
     }
-    
-    [data-testid="stAudioInput"] button[kind="secondary"]:hover {
-        background-color: #FF4B4B !important;
-        color: white !important;
+    .history-card:hover {
+        background: rgba(46, 204, 113, 0.05);
+        border-color: rgba(46, 204, 113, 0.2);
     }
 
-    /* 4. Fix Text Input Alignment */
+    /* Sidebar cleanup */
     div[data-testid="stVerticalBlock"] button {
         text-align: left;
     }
@@ -1926,8 +1958,11 @@ with tab_chat:
                 title = s.get('title', 'Chat')
                 s_id = s.get('id')
                 hc1, hc2 = st.columns([0.8, 0.2])
+                st.markdown('<div class="history-card">', unsafe_allow_html=True)
                 with hc1:
-                    if st.button(f"💬 {title[:15]}..", key=f"hist_{s_id}", use_container_width=True):
+                    is_active = st.session_state.current_chat_session_id == s_id
+                    btn_label = f"💬 {title[:15]}.."
+                    if st.button(btn_label, key=f"hist_{s_id}", use_container_width=True):
                         if is_logged_in:
                             messages = get_chat_messages(s_id)
                             st.session_state.chat_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
@@ -1939,6 +1974,7 @@ with tab_chat:
                     if st.button("🗑️", key=f"del_btn_{s_id}", help="Delete Chat"):
                         st.session_state.chat_to_delete = s_id
                         st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
         else:
             st.caption("No past chats" if is_logged_in else "Login to save chats")
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1968,7 +2004,8 @@ with tab_chat:
             if not st.session_state.chat_messages:
                 st.info("👋 Hi! I am Krishi-Mitra. Ask me about crops, weather, or mandi prices.")
             for msg in st.session_state.chat_messages:
-                with st.chat_message(msg["role"]):
+                avatar = "🌱" if msg["role"] == "user" else "🤖"
+                with st.chat_message(msg["role"], avatar=avatar):
                     st.markdown(msg["content"])
             if st.session_state.pending_audio:
                 if len(st.session_state.pending_audio) > 1000:
