@@ -1249,7 +1249,7 @@ with tab_dash:
         
         st.markdown(f"""
             <div style="text-align: right; opacity: 0.6; font-size: 0.8rem; line-height: 1.2;">
-                <div>{src_icon} {city_display} | {datetime.datetime.now().strftime('%H:%M')}</div>
+                <div>{src_icon} {city_display} | {(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)).strftime('%H:%M')}</div>
                 <div style="font-size: 0.7rem;">Coords: {lat_v:.4f}, {lon_v:.4f} | Source: {station}</div>
             </div>
         """, unsafe_allow_html=True)
