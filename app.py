@@ -1375,8 +1375,44 @@ with tab_dash:
             # We use the coordinates from live_data if available
             lat_v, lon_v = (coords['lat'], coords['lon']) if coords else (23.0225, 72.5714)
             
-            # Create an interactive Folium map
-            m = folium.Map(location=[lat_v, lon_v], zoom_start=zoom_level, control_scale=True, tiles=None)
+            # Create an interactive Folium map with scroll-trap prevention
+            m = folium.Map(location=[lat_v, lon_v], zoom_start=zoom_level, control_scale=True, tiles=None, scrollWheelZoom=False)
+            
+            # --- 🛠️ Implementation of Option B: Ctrl+Scroll to Zoom ---
+            from branca.element import Element, MacroElement
+            from jinja2 import Template
+            
+            class CtrlScrollZoom(MacroElement):
+                def __init__(self):
+                    super(CtrlScrollZoom, self).__init__()
+                    self._template = Template("""
+                        {% macro script(this, kwargs) %}
+                        var map_el = {{this._parent.get_name()}};
+                        map_el.scrollWheelZoom.disable();
+                        
+                        // Show hint on wheel scroll without Ctrl
+                        var map_div = document.getElementById(map_el._container.id);
+                        map_div.addEventListener('wheel', function(event) {
+                            if (!event.ctrlKey && !event.metaKey) {
+                                // You could show a "Use Ctrl + Scroll to Zoom" tooltip here
+                                // For now, we just ensure it doesn't zoom
+                                map_el.scrollWheelZoom.disable();
+                            } else {
+                                map_el.scrollWheelZoom.enable();
+                            }
+                        });
+                        
+                        // Handle global key states for smooth transition
+                        window.addEventListener('keydown', function(e) {
+                            if (e.ctrlKey || e.metaKey) { map_el.scrollWheelZoom.enable(); }
+                        });
+                        window.addEventListener('keyup', function(e) {
+                            if (!e.ctrlKey && !e.metaKey) { map_el.scrollWheelZoom.disable(); }
+                        });
+                        {% endmacro %}
+                    """)
+            
+            m.add_child(CtrlScrollZoom())
             
             # Add Satellite Tiles (Esri World Imagery)
             folium.TileLayer(
@@ -2336,8 +2372,40 @@ with tab_farm:
                     start_lat, start_lon = gps['lat'], gps['lon']
                     zoom_start = 12
 
-                # Create Folium Map (Satellite View is Critical for farmers)
-                m = folium.Map(location=[start_lat, start_lon], zoom_start=zoom_start)
+                # Create Folium Map with Scroll-Shield to prevent page scroll trap
+                m = folium.Map(location=[start_lat, start_lon], zoom_start=zoom_start, scrollWheelZoom=False)
+                
+                # Consistent Scroll-Shield Implementation
+                from branca.element import Element, MacroElement
+                from jinja2 import Template
+                
+                class CtrlScrollZoom(MacroElement):
+                    def __init__(self):
+                        super(CtrlScrollZoom, self).__init__()
+                        self._template = Template("""
+                            {% macro script(this, kwargs) %}
+                            var map_obj = {{this._parent.get_name()}};
+                            map_obj.scrollWheelZoom.disable();
+                            
+                            var map_cont = document.getElementById(map_obj._container.id);
+                            map_cont.addEventListener('wheel', function(e) {
+                                if (e.ctrlKey || e.metaKey) {
+                                    map_obj.scrollWheelZoom.enable();
+                                } else {
+                                    map_obj.scrollWheelZoom.disable();
+                                }
+                            });
+                            
+                            window.addEventListener('keydown', function(e) {
+                                if (e.ctrlKey || e.metaKey) { map_obj.scrollWheelZoom.enable(); }
+                            });
+                            window.addEventListener('keyup', function(e) {
+                                if (!e.ctrlKey && !e.metaKey) { map_obj.scrollWheelZoom.disable(); }
+                            });
+                            {% endmacro %}
+                        """)
+                
+                m.add_child(CtrlScrollZoom())
                 
                 # Add Satellite Tiles (Esri World Imagery)
                 folium.TileLayer(
