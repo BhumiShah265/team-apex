@@ -141,36 +141,35 @@ def apply_modern_theme():
         transition: none !important;
     }
 
-    /* 🌀 HUD LOADING INDICATOR */
-    [data-testid="stAppViewContainer"][data-test-script-state="running"]::after {
+    /* 🌀 HUD LOADING INDICATOR - ROBUST VERSION */
+    [data-test-script-state="running"]::after {
         content: "KRISHI-MITRA AI IS THINKING..." !important;
         position: fixed !important;
         top: 20px !important;
         left: 50% !important;
         transform: translateX(-50%) !important;
-        background: rgba(8, 9, 10, 0.8) !important;
+        background: rgba(8, 9, 10, 0.9) !important;
         color: #2ECC71 !important;
         padding: 10px 28px !important;
         border-radius: 99px !important;
         font-weight: 600 !important;
         font-size: 0.75rem !important;
         letter-spacing: 2px !important;
-        z-index: 999999999 !important;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 15px rgba(46, 204, 113, 0.1) !important;
+        z-index: 2000000000 !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8), 0 0 20px rgba(46, 204, 113, 0.2) !important;
         animation: slideDownFade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards, pulseEmerald 2s infinite !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
-        border: 1px solid rgba(46, 204, 113, 0.3) !important;
+        backdrop-filter: blur(15px) !important;
+        -webkit-backdrop-filter: blur(15px) !important;
+        border: 1px solid rgba(46, 204, 113, 0.4) !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         text-transform: uppercase !important;
     }
 
-    /* Force removal when stopped */
-    [data-testid="stAppViewContainer"][data-test-script-state="stopped"]::after {
+    [data-test-script-state="stopped"]::after {
+        content: "" !important;
         display: none !important;
-        content: none !important;
     }
 
     @keyframes slideDownFade {
@@ -1417,6 +1416,19 @@ with tab_dash:
 
             # Render the map with st_folium
             st_folium(m, height=450, width="100%", key="satellite_map_dashboard", returned_objects=[])
+
+            # --- LIVE LOCATION HUD UNDER MAP ---
+            loc_label = "📍 પકડાયેલ લોકેશન" if st.session_state.language == 'gu' else "📍 Detected Live Location"
+            st.markdown(f"""
+                <div style="background: rgba(46, 204, 113, 0.05); border: 1px solid rgba(46, 204, 113, 0.2); 
+                            border-radius: 0 0 12px 12px; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center;
+                            margin-top: -5px; backdrop-filter: blur(5px);">
+                    <div style="font-size: 0.85rem; color: #2ECC71; font-weight: 600;">{loc_label}: {city_display}</div>
+                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); font-family: monospace;">
+                        LAT: {lat_v:.4f} | LON: {lon_v:.4f} | {st.session_state.get('location_source', 'GPS').upper()}
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -2167,7 +2179,21 @@ with tab_farm:
             live_pdf = st.session_state.get('live_data')
             
             try:
-                report_bytes = generate_farm_report(u_name, u_email, f_city, f_size, active_crops, live_pdf)
+                # Prepare translated data for PDF
+                lang = st.session_state.language
+                t_pdf = st.session_state.t
+                
+                # Copy crops and translate names/status if needed
+                translated_active_crops = []
+                for c in active_crops:
+                    c_copy = c.copy()
+                    c_copy['crop_name'] = translate_dynamic(c.get('crop_name', ''), lang)
+                    c_copy['health_status'] = translate_dynamic(c.get('health_status', 'N/A'), lang)
+                    translated_active_crops.append(c_copy)
+                
+                t_city = translate_dynamic(f_city, lang)
+                
+                report_bytes = generate_farm_report(u_name, u_email, t_city, f_size, translated_active_crops, live_pdf, lang_code=lang, t=t_pdf)
                 
                 # Custom minimal text-only button style for export
                 st.markdown("""
