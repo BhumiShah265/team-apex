@@ -139,4 +139,12 @@ def generate_farm_report(user_name, user_email, city, size, active_crops, live_d
     pdf.set_font(pdf.custom_font if lang_code == 'gu' else 'Arial', 'I' if lang_code == 'en' else '', 8)
     pdf.multi_cell(0, 5, note)
     
-    return pdf.output()
+    # Return as clean bytes
+    try:
+        pdf_output = pdf.output()
+        if isinstance(pdf_output, str):
+            return pdf_output.encode('latin-1')
+        return bytes(pdf_output)
+    except Exception as e:
+        print(f"PDF Output Error: {e}")
+        raise e

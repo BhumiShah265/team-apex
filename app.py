@@ -2183,17 +2183,30 @@ with tab_farm:
                 lang = st.session_state.language
                 t_pdf = st.session_state.t
                 
+                # Helper to ensure string is clean UTF-8 and safe for PDF
+                def clean_str(s):
+                    if not s: return ""
+                    return str(s).encode('utf-8', 'ignore').decode('utf-8')
+
                 # Copy crops and translate names/status if needed
                 translated_active_crops = []
                 for c in active_crops:
                     c_copy = c.copy()
-                    c_copy['crop_name'] = translate_dynamic(c.get('crop_name', ''), lang)
-                    c_copy['health_status'] = translate_dynamic(c.get('health_status', 'N/A'), lang)
+                    c_copy['crop_name'] = clean_str(translate_dynamic(c.get('crop_name', ''), lang))
+                    c_copy['health_status'] = clean_str(translate_dynamic(c.get('health_status', 'N/A'), lang))
                     translated_active_crops.append(c_copy)
                 
-                t_city = translate_dynamic(f_city, lang)
+                t_city = clean_str(translate_dynamic(f_city, lang))
+                u_name_clean = clean_str(u_name)
+                u_email_clean = clean_str(u_email)
                 
-                report_bytes = generate_farm_report(u_name, u_email, t_city, f_size, translated_active_crops, live_pdf, lang_code=lang, t=t_pdf)
+                report_bytes = generate_farm_report(u_name_clean, u_email_clean, t_city, f_size, translated_active_crops, live_pdf, lang_code=lang, t=t_pdf)
+                
+                # Explicitly ensure bytes
+                if isinstance(report_bytes, str):
+                    report_bytes = report_bytes.encode('latin-1')
+                else:
+                    report_bytes = bytes(report_bytes)
                 
                 # Custom minimal text-only button style for export
                 st.markdown("""
@@ -2211,6 +2224,33 @@ with tab_farm:
                     color: #27AE60 !important;
                     text-decoration: underline !important;
                 }
+
+                /* 🌀 REINFORCED HUD LOADING INDICATOR */
+                [data-testid="stAppViewContainer"][data-test-script-state="running"]::after {
+                    content: "KRISHI-MITRA AI IS THINKING..." !important;
+                    position: fixed !important;
+                    top: 20px !important;
+                    left: 50% !important;
+                    transform: translateX(-50%) !important;
+                    background: rgba(8, 9, 10, 0.95) !important;
+                    color: #2ECC71 !important;
+                    padding: 10px 30px !important;
+                    border-radius: 99px !important;
+                    font-weight: 600 !important;
+                    font-size: 0.8rem !important;
+                    letter-spacing: 2px !important;
+                    z-index: 2147483647 !important;
+                    box-shadow: 0 10px 40px rgba(0, 0, 0, 1), 0 0 30px rgba(46, 204, 113, 0.3) !important;
+                    animation: slideDownFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards, pulseEmerald 2s infinite !important;
+                    backdrop-filter: blur(20px) !important;
+                    -webkit-backdrop-filter: blur(20px) !important;
+                    border: 1px solid rgba(46, 204, 113, 0.5) !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    text-transform: uppercase !important;
+                    pointer-events: none !important;
+                }
                 </style>
                 """, unsafe_allow_html=True)
                 
@@ -2224,6 +2264,7 @@ with tab_farm:
                     type="secondary"
                 )
             except Exception as e:
+                print(f"PDF EXCEPTION: {e}")
                 st.error(f"PDF Error: {e}")
 
         # --- 3. Dialogs & Modals ---
