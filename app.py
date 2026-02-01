@@ -1840,6 +1840,7 @@ with tab_chat:
     if 'guest_chat_history' not in st.session_state: st.session_state.guest_chat_history = []
     if 'guest_chat_id_counter' not in st.session_state: st.session_state.guest_chat_id_counter = 0
     if 'voice_interaction' not in st.session_state: st.session_state.voice_interaction = False
+    if 'mic_key' not in st.session_state: st.session_state.mic_key = 0
 
     # --- 2. CSS FIXES (The "Anti-Shift" Fix) ---
     st.markdown("""
@@ -1944,107 +1945,108 @@ with tab_chat:
 
     # --- LEFT COLUMN: ACTIVE CHAT ---
     with chat_col:
-        with st.container(border=True):
-            # Header
-            c_head_1, c_head_2 = st.columns([0.9, 0.1])
-            with c_head_1:
-                 st.markdown(f'<div style="margin-top: -5px; color: #94A3B8; font-size: 0.9rem;">{t.get("chat_interface", "AI Farming Assistant")}</div>', unsafe_allow_html=True)
-            with c_head_2:
-                if st.button("➕", key="new_chat_btn_main", help=t.get('new_chat', 'New Chat')):
-                    if not is_logged_in and st.session_state.chat_messages:
-                        first_user_msg = next((msg['content'] for msg in st.session_state.chat_messages if msg['role'] == 'user'), None)
-                        if first_user_msg:
-                            title = generate_title_from_message(first_user_msg, st.session_state.language)
-                            st.session_state.guest_chat_history.insert(0, {'id': f"guest_{st.session_state.guest_chat_id_counter}", 'title': title, 'messages': st.session_state.chat_messages.copy()})
-                            st.session_state.guest_chat_id_counter += 1
-                    st.session_state.chat_messages = []
-                    st.session_state.current_chat_session_id = None
-                    st.session_state.last_processed_msg = None
-                    st.rerun()
+        # Combined Header & Container
+        c_head_1, c_head_2 = st.columns([0.9, 0.1])
+        with c_head_1:
+            st.markdown(f'<div style="margin-top: -5px; color: #94A3B8; font-size: 0.9rem;">{t.get("chat_interface", "AI Farming Assistant")}</div>', unsafe_allow_html=True)
+        with c_head_2:
+            if st.button("➕", key="new_chat_btn_main", help=t.get('new_chat', 'New Chat')):
+                if not is_logged_in and st.session_state.chat_messages:
+                    first_user_msg = next((msg['content'] for msg in st.session_state.chat_messages if msg['role'] == 'user'), None)
+                    if first_user_msg:
+                        title = generate_title_from_message(first_user_msg, st.session_state.language)
+                        st.session_state.guest_chat_history.insert(0, {'id': f"guest_{st.session_state.guest_chat_id_counter}", 'title': title, 'messages': st.session_state.chat_messages.copy()})
+                        st.session_state.guest_chat_id_counter += 1
+                st.session_state.chat_messages = []
+                st.session_state.current_chat_session_id = None
+                st.session_state.last_processed_msg = None
+                st.rerun()
+        
+        # Chat Container
+        chat_container = st.container(height=400)
+        with chat_container:
+            if not st.session_state.chat_messages:
+                st.info("👋 Hi! I am Krishi-Mitra. Ask me about crops, weather, or mandi prices.")
+            for msg in st.session_state.chat_messages:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+            if st.session_state.pending_audio:
+                if len(st.session_state.pending_audio) > 1000:
+                    st.audio(st.session_state.pending_audio, autoplay=True)
+                st.session_state.pending_audio = None
+
+        # --- INPUT AREA (Fixed Alignment) ---
+        input_area = st.container()
+        with input_area:
+            st.markdown("""<style>.stTextInput { width: 100% !important; }</style>""", unsafe_allow_html=True)
             
-            # Chat Container
-            chat_container = st.container(height=400)
-            with chat_container:
-                if not st.session_state.chat_messages:
-                    st.info("👋 Hi! I am Krishi-Mitra. Ask me about crops, weather, or mandi prices.")
-                for msg in st.session_state.chat_messages:
-                    with st.chat_message(msg["role"]):
-                        st.markdown(msg["content"])
-                if st.session_state.pending_audio:
-                    if len(st.session_state.pending_audio) > 1000:
-                        st.audio(st.session_state.pending_audio, autoplay=True)
-                    st.session_state.pending_audio = None
+            # vertical_alignment="bottom" ensures the mic button sits on the same baseline as the text box
+            input_c1, input_c2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
+            
+            with input_c1:
+                st.text_input(
+                    "Message", 
+                    placeholder=t.get('ask_ai', 'Type here and press Enter...'), 
+                    label_visibility="collapsed", 
+                    key="user_input_text_fixed",
+                    on_change=submit_text 
+                )
+            
+            with input_c2:
+                # Key rotation (mic_key) ensures the widget clears after audio is sent
+                audio_result = st.audio_input("Voice", label_visibility="collapsed", key=f"mic_fixed_{st.session_state.mic_key}")
 
-            # --- INPUT AREA (Fixed Alignment) ---
-            input_area = st.container()
-            with input_area:
-                st.markdown("""<style>.stTextInput { width: 100% !important; }</style>""", unsafe_allow_html=True)
-                
-                # vertical_alignment="bottom" ensures the mic button sits on the same baseline as the text box
-                input_c1, input_c2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
-                
-                with input_c1:
-                    st.text_input(
-                        "Message", 
-                        placeholder=t.get('ask_ai', 'Type here and press Enter...'), 
-                        label_visibility="collapsed", 
-                        key="user_input_text_fixed",
-                        on_change=submit_text 
-                    )
-                
-                with input_c2:
-                    # Give audio input more width (0.2 instead of 0.15)
-                    audio_result = st.audio_input("Voice", label_visibility="collapsed", key="mic_fixed")
+        # --- PROCESSING LOGIC ---
+        if audio_result:
+            audio_id = f"audio_{audio_result.size}_{audio_result.name}"
+            if st.session_state.get('last_processed_audio_id') != audio_id:
+                with chat_container:
+                    with st.spinner("🎙️ Transcribing..."):
+                        try:
+                            audio_bytes = audio_result.getvalue()
+                            transcribed_text = transcribe_audio(audio_bytes, st.session_state.language)
+                            if transcribed_text and not transcribed_text.startswith("Error"):
+                                st.session_state.chat_messages.append({"role": "user", "content": transcribed_text.strip()})
+                                st.session_state.voice_interaction = True
+                                st.session_state.last_processed_audio_id = audio_id
+                                # Increment key to clear the audio widget
+                                st.session_state.mic_key += 1
+                                st.rerun()
+                            elif transcribed_text.startswith("Error"): st.error(transcribed_text)
+                        except Exception as e: st.error(f"Error: {e}")
 
-            # --- PROCESSING LOGIC ---
-            if audio_result:
-                audio_id = f"audio_{audio_result.size}_{audio_result.name}"
-                if st.session_state.get('last_processed_audio_id') != audio_id:
-                    with chat_container:
-                        with st.spinner("🎙️ Transcribing..."):
-                            try:
-                                audio_bytes = audio_result.getvalue()
-                                transcribed_text = transcribe_audio(audio_bytes, st.session_state.language)
-                                if transcribed_text and not transcribed_text.startswith("Error"):
-                                    st.session_state.chat_messages.append({"role": "user", "content": transcribed_text.strip()})
-                                    st.session_state.voice_interaction = True
-                                    st.session_state.last_processed_audio_id = audio_id
-                                    st.rerun()
-                                elif transcribed_text.startswith("Error"): st.error(transcribed_text)
-                            except Exception as e: st.error(f"Error: {e}")
-
-            if st.session_state.chat_messages and st.session_state.chat_messages[-1]["role"] == "user":
-                curr_sig = f"{len(st.session_state.chat_messages)}_{st.session_state.chat_messages[-1]['content'][:20]}"
-                if curr_sig != st.session_state.last_processed_msg:
-                    st.session_state.last_processed_msg = curr_sig
-                    user_msg = st.session_state.chat_messages[-1]["content"]
-                    
-                    if is_logged_in and st.session_state.current_chat_session_id is None:
-                        user_id = st.session_state.user_profile.get("id")
-                        session_id = create_chat_session(user_email, user_msg, st.session_state.language, user_id)
-                        st.session_state.current_chat_session_id = session_id
-                        st.session_state.chat_history_list = get_user_chat_sessions(user_email)
-                    if is_logged_in and st.session_state.current_chat_session_id:
-                        save_message(st.session_state.current_chat_session_id, "user", user_msg)
-                    
-                    with chat_container:
-                        with st.chat_message("assistant"):
-                            st.markdown(f'<span style="color:#9CA3AF; font-size:0.8rem;">{t.get("ai_typing", "Krishi-Mitra is thinking...")}</span>', unsafe_allow_html=True)
-                            with st.spinner(""):
-                                target_crop = st.session_state.user_profile.get("preferred_crop", "Groundnut") if is_logged_in else "Groundnut"
-                                context = {"city": selected_city, "crop": target_crop, "temp": 30, "crop_history": st.session_state.get('crop_history', [])}
-                                reply = chat_with_krishi_mitra(user_msg, st.session_state.language, context)
-                                st.write(reply)
-                                if st.session_state.get('voice_interaction'):
-                                    from bhashini_layer import text_to_speech
-                                    audio_bytes = text_to_speech(reply, st.session_state.language)
-                                    if audio_bytes: st.session_state.pending_audio = audio_bytes
-                    
-                    st.session_state.chat_messages.append({"role": "assistant", "content": reply})
-                    if is_logged_in and st.session_state.current_chat_session_id:
-                        save_message(st.session_state.current_chat_session_id, "assistant", reply)
-                    st.session_state.voice_interaction = False
-                    st.rerun()
+        if st.session_state.chat_messages and st.session_state.chat_messages[-1]["role"] == "user":
+            curr_sig = f"{len(st.session_state.chat_messages)}_{st.session_state.chat_messages[-1]['content'][:20]}"
+            if curr_sig != st.session_state.last_processed_msg:
+                st.session_state.last_processed_msg = curr_sig
+                user_msg = st.session_state.chat_messages[-1]["content"]
+                
+                if is_logged_in and st.session_state.current_chat_session_id is None:
+                    user_id = st.session_state.user_profile.get("id")
+                    session_id = create_chat_session(user_email, user_msg, st.session_state.language, user_id)
+                    st.session_state.current_chat_session_id = session_id
+                    st.session_state.chat_history_list = get_user_chat_sessions(user_email)
+                if is_logged_in and st.session_state.current_chat_session_id:
+                    save_message(st.session_state.current_chat_session_id, "user", user_msg)
+                
+                with chat_container:
+                    with st.chat_message("assistant"):
+                        st.markdown(f'<span style="color:#9CA3AF; font-size:0.8rem;">{t.get("ai_typing", "Krishi-Mitra is thinking...")}</span>', unsafe_allow_html=True)
+                        with st.spinner(""):
+                            target_crop = st.session_state.user_profile.get("preferred_crop", "Groundnut") if is_logged_in else "Groundnut"
+                            context = {"city": selected_city, "crop": target_crop, "temp": 30, "crop_history": st.session_state.get('crop_history', [])}
+                            reply = chat_with_krishi_mitra(user_msg, st.session_state.language, context)
+                            st.write(reply)
+                            if st.session_state.get('voice_interaction'):
+                                from bhashini_layer import text_to_speech
+                                audio_bytes = text_to_speech(reply, st.session_state.language)
+                                if audio_bytes: st.session_state.pending_audio = audio_bytes
+                
+                st.session_state.chat_messages.append({"role": "assistant", "content": reply})
+                if is_logged_in and st.session_state.current_chat_session_id:
+                    save_message(st.session_state.current_chat_session_id, "assistant", reply)
+                st.session_state.voice_interaction = False
+                st.rerun()
 
     # --- DELETE CONFIRMATION ---
     if st.session_state.get('chat_to_delete'):
