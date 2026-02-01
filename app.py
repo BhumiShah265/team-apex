@@ -59,44 +59,60 @@ def init_gps_from_component():
     now = datetime.datetime.now()
     last_check = st.session_state.get('last_gps_time', datetime.datetime.min)
     
-    # 1. Wait at least 5 mins between browser GPS pulses
+    # 1. Wait at least 5 mins (300s) between browser GPS pulses
     if (now - last_check).total_seconds() < 300:
         return
 
     # 2. Pulse detection (Render the component)
     loc = get_geolocation(component_key=f"get_loc_{now.minute}") # Dynamic key to force refresh
     
+    source = None
+    lat, lon = None, None
+
     if loc and 'coords' in loc:
         lat = float(loc['coords']['latitude'])
         lon = float(loc['coords']['longitude'])
         source = 'browser'
-        # Reset the 5-min timer
+        # Reset the timer
         st.session_state['last_gps_time'] = now
     else:
-        # IP Fallback (Silent)
-        if st.session_state.get('location_source') == 'default':
+        # IP Fallback (Silent) - Fixed to run if key is missing
+        # Only try IP if we haven't locked onto browser yet
+        if st.session_state.get('location_source', 'default') == 'default':
+            
+            # Service 1: ip-api (Fastest, usually)
             try:
                 r = requests.get('http://ip-api.com/json', timeout=2).json()
                 if r.get('status') == 'success':
                     lat, lon = r.get('lat'), r.get('lon')
                     source = 'ip'
-                    st.session_state['last_gps_time'] = now # Pulse IP also
-                else: return
-            except: return
-        else: return
+            except: pass
+            
+            # Service 2: ipapi.co (Backup)
+            if not source:
+                try:
+                    r = requests.get('https://ipapi.co/json/', timeout=2).json()
+                    if 'latitude' in r:
+                        lat, lon = r.get('latitude'), r.get('longitude')
+                        source = 'ip'
+                except: pass
 
-    # Update state only if changed
-    if st.session_state.get('auto_lat') != lat or st.session_state.get('auto_lon') != lon:
-        st.session_state['auto_lat'] = lat
-        st.session_state['auto_lon'] = lon
-        st.session_state['location_source'] = source
-        st.session_state['location_locked'] = True
-        
-        from data_utils import get_nearest_city
-        found_city = get_nearest_city(lat, lon)
-        st.session_state['auto_city'] = found_city
-        st.session_state.live_data = None 
-        st.rerun()
+            if source == 'ip':
+                st.session_state['last_gps_time'] = now # Pulse IP also
+
+    # Update state only if changed and valid
+    if lat is not None and lon is not None:
+        if st.session_state.get('auto_lat') != lat or st.session_state.get('auto_lon') != lon:
+            st.session_state['auto_lat'] = lat
+            st.session_state['auto_lon'] = lon
+            st.session_state['location_source'] = source
+            st.session_state['location_locked'] = True
+            
+            from data_utils import get_nearest_city
+            found_city = get_nearest_city(lat, lon)
+            st.session_state['auto_city'] = found_city
+            st.session_state.live_data = None 
+            st.rerun()
 
 # RUN THE LOGIC
 init_gps_from_component()
