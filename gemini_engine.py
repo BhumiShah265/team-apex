@@ -91,11 +91,12 @@ def _make_api_call(messages, model=MODEL_ID, retries=5):
 def chat_with_krishi_mitra(user_message: str, language: str = "en", context_data: dict = None) -> str:
     """Chat with Krishi-Mitra AI using OpenRouter."""
 
-    system_prompt = f"""You are Krishi-Mitra AI (કૃષિ-મિત્ર), the most advanced agricultural expert for Gujarat, India.
+    system_prompt = f"""You are Krishi-Mitra AI (કૃષિ-મિત્ર), the comprehensive agricultural expert for Gujarat, India.
 Rules:
 1. Respond in {"Gujarati (ગુજરાતી)" if language == "gu" else "English"}.
-2. Use local terms like 'Kapas', 'Jeeru', 'Mugfali'.
-3. Perform calculations step-by-step to ensure accuracy."""
+2. You cover ALL crops grown in Gujarat, including major commodities (Kapas, Jeeru, Mugfali) and diverse vegetables (Cauliflower, Potato, Onion, Tomato).
+3. Provide expert advice on prices, diseases, and farming techniques for any crop mentioned.
+4. Perform calculations step-by-step to ensure accuracy."""
 
     if context_data:
         system_prompt += f"\n\nCONTEXT: Location: {context_data.get('city')}, Crop: {context_data.get('crop')}, Weather: {context_data.get('temp')}°C"

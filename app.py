@@ -124,6 +124,63 @@ def apply_modern_theme():
             radial-gradient(circle at 85% 30%, rgba(46, 204, 113, 0.05), transparent 25%);
         color: var(--text-primary);
         font-family: 'Inter', sans-serif;
+        transition: none !important;
+    }
+    
+    [data-testid="stAppViewContainer"] {
+        opacity: 1 !important;
+        filter: none !important;
+        transition: none !important;
+    }
+    
+    [data-testid="stAppViewContainer"][data-test-script-state="running"],
+    [data-testid="stAppViewContainer"][data-test-script-state="running"] > .main,
+    div[data-testid="stAppViewContainer"] > section {
+        opacity: 1 !important;
+        filter: none !important;
+        transition: none !important;
+    }
+
+    /* 🌀 HUD LOADING INDICATOR */
+    [data-testid="stAppViewContainer"][data-test-script-state="running"]::after {
+        content: "KRISHI-MITRA AI IS THINKING..." !important;
+        position: fixed !important;
+        top: 20px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        background: rgba(8, 9, 10, 0.8) !important;
+        color: #2ECC71 !important;
+        padding: 10px 28px !important;
+        border-radius: 99px !important;
+        font-weight: 600 !important;
+        font-size: 0.75rem !important;
+        letter-spacing: 2px !important;
+        z-index: 999999999 !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 15px rgba(46, 204, 113, 0.1) !important;
+        animation: slideDownFade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards, pulseEmerald 2s infinite !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        border: 1px solid rgba(46, 204, 113, 0.3) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-transform: uppercase !important;
+    }
+
+    /* Force removal when stopped */
+    [data-testid="stAppViewContainer"][data-test-script-state="stopped"]::after {
+        display: none !important;
+        content: none !important;
+    }
+
+    @keyframes slideDownFade {
+        from { top: -20px; opacity: 0; transform: translateX(-50%) scale(0.9); }
+        to { top: 20px; opacity: 1; transform: translateX(-50%) scale(1); }
+    }
+
+    @keyframes pulseEmerald {
+        0%, 100% { border-color: rgba(46, 204, 113, 0.3); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 10px rgba(46, 204, 113, 0.05); }
+        50% { border-color: rgba(46, 204, 113, 0.6); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 25px rgba(46, 204, 113, 0.2); }
     }
 
     section[data-testid="stSidebar"] { display: none !important; }
@@ -136,42 +193,6 @@ def apply_modern_theme():
         padding-right: 1rem !important;
         max-width: 100% !important;
         width: 100% !important;
-        margin: 0 auto !important;
-    }
-
-    /* 🔴 ANTI-DULL LOGIC: Keep screen 100% vibrant, no transparency or fading */
-    [data-testid="stAppViewContainer"][data-test-script-state="running"] > section {
-        opacity: 1 !important;
-        filter: none !important;
-    }
-
-    /* 🟢 PRO LOADING OVERLAY: Centered, prominent loading state */
-    [data-testid="stAppViewContainer"][data-test-script-state="running"]::after {
-        content: "🌱 KRISHI-MITRA AI IS LOADING...";
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(15, 23, 42, 0.9);
-        color: #2ECC71;
-        padding: 24px 48px;
-        border-radius: var(--radius-lg);
-        font-weight: 800;
-        letter-spacing: 2px;
-        z-index: 999999;
-        box-shadow: 0 0 60px rgba(46, 204, 113, 0.2);
-        border: 1px solid rgba(46, 204, 113, 0.4);
-        animation: loadingPulse 1.2s infinite ease-in-out;
-        font-size: 1rem;
-        backdrop-filter: blur(10px);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    @keyframes loadingPulse {
-        0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; box-shadow: 0 0 40px rgba(46, 204, 113, 0.2); }
-        50% { transform: translate(-50%, -50%) scale(1.02); opacity: 1; box-shadow: 0 0 80px rgba(46, 204, 113, 0.4); }
     }
 
     .bento-card {
@@ -1678,7 +1699,10 @@ with tab_mandi:
         default_idx = 0
         if smart_match and smart_match in all_crops:
             default_idx = all_crops.index(smart_match)
-            st.toast(f"Matched: {translate_dynamic(smart_match, st.session_state.language)}", icon="🎯")
+            # Only toast if the match has changed to prevent re-running on every interaction
+            if st.session_state.get('last_smart_match') != smart_match:
+                st.toast(f"Matched: {translate_dynamic(smart_match, st.session_state.language)}", icon="🎯")
+                st.session_state['last_smart_match'] = smart_match
         elif "Groundnut (HPS)" in all_crops:
             default_idx = all_crops.index("Groundnut (HPS)")
 
@@ -1692,7 +1716,7 @@ with tab_mandi:
         with co2:
             qty = st.number_input(t.get('quantity', 'Quantity (Quintals)'), min_value=1, max_value=1000, value=10)
         with co3:
-            vehicle_name = st.selectbox("Transport Vehicle", options=list(VEHICLE_TYPES.keys()))
+            vehicle_name = st.selectbox("Transport Vehicle", options=list(VEHICLE_TYPES.keys()), format_func=lambda x: translate_dynamic(x, st.session_state.language))
             transport_rate = VEHICLE_TYPES[vehicle_name]
 
         # 3. Third Row: The Action Button
@@ -1949,141 +1973,142 @@ with tab_chat:
 
     # --- RIGHT COLUMN: CHAT HISTORY LIST ---
     with hist_col:
-        st.markdown(f"#### 📜 {t.get('chat_history', 'History')}")
-        st.markdown('<div style="height: 400px; overflow-y: auto; padding-right: 5px;">', unsafe_allow_html=True)
-        
-        sessions = st.session_state.chat_history_list if is_logged_in else st.session_state.guest_chat_history
-        if sessions:
-            for s in sessions[:10]:
-                title = s.get('title', 'Chat')
-                s_id = s.get('id')
-                hc1, hc2 = st.columns([0.8, 0.2])
-                st.markdown('<div class="history-card">', unsafe_allow_html=True)
-                with hc1:
-                    is_active = st.session_state.current_chat_session_id == s_id
-                    btn_label = f"💬 {title[:15]}.."
-                    if st.button(btn_label, key=f"hist_{s_id}", use_container_width=True):
-                        if is_logged_in:
-                            messages = get_chat_messages(s_id)
-                            st.session_state.chat_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
-                        else:
-                            st.session_state.chat_messages = s.get('messages', [])
-                        st.session_state.current_chat_session_id = s_id
-                        st.rerun()
-                with hc2:
-                    if st.button("🗑️", key=f"del_btn_{s_id}", help="Delete Chat"):
-                        st.session_state.chat_to_delete = s_id
-                        st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            st.caption("No past chats" if is_logged_in else "Login to save chats")
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown(f"#### 📜 {t.get('chat_history', 'History')}")
+            st.markdown('<div style="height: 415px; overflow-y: auto; padding-right: 5px;">', unsafe_allow_html=True)
+            
+            sessions = st.session_state.chat_history_list if is_logged_in else st.session_state.guest_chat_history
+            if sessions:
+                for s in sessions[:10]:
+                    title = s.get('title', 'Chat')
+                    s_id = s.get('id')
+                    hc1, hc2 = st.columns([0.8, 0.2])
+                    st.markdown('<div class="history-card">', unsafe_allow_html=True)
+                    with hc1:
+                        btn_label = f"💬 {title[:15]}.."
+                        if st.button(btn_label, key=f"hist_{s_id}", use_container_width=True):
+                            if is_logged_in:
+                                messages = get_chat_messages(s_id)
+                                st.session_state.chat_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
+                            else:
+                                st.session_state.chat_messages = s.get('messages', [])
+                            st.session_state.current_chat_session_id = s_id
+                            st.rerun()
+                    with hc2:
+                        if st.button("🗑️", key=f"del_btn_{s_id}", help="Delete Chat"):
+                            st.session_state.chat_to_delete = s_id
+                            st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.caption("No past chats" if is_logged_in else "Login to save chats")
+            st.markdown('</div>', unsafe_allow_html=True)
 
     # --- LEFT COLUMN: ACTIVE CHAT ---
     with chat_col:
-        # Combined Header & Container
-        c_head_1, c_head_2 = st.columns([0.9, 0.1])
-        with c_head_1:
-            st.markdown(f'<div style="margin-top: -5px; color: #94A3B8; font-size: 0.9rem;">{t.get("chat_interface", "AI Farming Assistant")}</div>', unsafe_allow_html=True)
-        with c_head_2:
-            if st.button("➕", key="new_chat_btn_main", help=t.get('new_chat', 'New Chat')):
-                if not is_logged_in and st.session_state.chat_messages:
-                    first_user_msg = next((msg['content'] for msg in st.session_state.chat_messages if msg['role'] == 'user'), None)
-                    if first_user_msg:
-                        title = generate_title_from_message(first_user_msg, st.session_state.language)
-                        st.session_state.guest_chat_history.insert(0, {'id': f"guest_{st.session_state.guest_chat_id_counter}", 'title': title, 'messages': st.session_state.chat_messages.copy()})
-                        st.session_state.guest_chat_id_counter += 1
-                st.session_state.chat_messages = []
-                st.session_state.current_chat_session_id = None
-                st.session_state.last_processed_msg = None
-                st.rerun()
-        
-        # Chat Container
-        chat_container = st.container(height=400)
-        with chat_container:
-            if not st.session_state.chat_messages:
-                st.info("👋 Hi! I am Krishi-Mitra. Ask me about crops, weather, or mandi prices.")
-            for msg in st.session_state.chat_messages:
-                avatar = "🌱" if msg["role"] == "user" else "🤖"
-                with st.chat_message(msg["role"], avatar=avatar):
-                    st.markdown(msg["content"])
-            if st.session_state.pending_audio:
-                if len(st.session_state.pending_audio) > 1000:
-                    st.audio(st.session_state.pending_audio, autoplay=True)
-                st.session_state.pending_audio = None
-
-        # --- INPUT AREA (Fixed Alignment) ---
-        input_area = st.container()
-        with input_area:
-            st.markdown("""<style>.stTextInput { width: 100% !important; }</style>""", unsafe_allow_html=True)
+        with st.container(border=True):
+            # Combined Header & Container
+            c_head_1, c_head_2 = st.columns([0.9, 0.1])
+            with c_head_1:
+                st.markdown(f'<div style="margin-top: -5px; color: #94A3B8; font-size: 0.9rem;">{t.get("chat_interface", "AI Farming Assistant")}</div>', unsafe_allow_html=True)
+            with c_head_2:
+                if st.button("➕", key="new_chat_btn_main", help=t.get('new_chat', 'New Chat')):
+                    if not is_logged_in and st.session_state.chat_messages:
+                        first_user_msg = next((msg['content'] for msg in st.session_state.chat_messages if msg['role'] == 'user'), None)
+                        if first_user_msg:
+                            title = generate_title_from_message(first_user_msg, st.session_state.language)
+                            st.session_state.guest_chat_history.insert(0, {'id': f"guest_{st.session_state.guest_chat_id_counter}", 'title': title, 'messages': st.session_state.chat_messages.copy()})
+                            st.session_state.guest_chat_id_counter += 1
+                    st.session_state.chat_messages = []
+                    st.session_state.current_chat_session_id = None
+                    st.session_state.last_processed_msg = None
+                    st.rerun()
             
-            # vertical_alignment="bottom" ensures the mic button sits on the same baseline as the text box
-            input_c1, input_c2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
-            
-            with input_c1:
-                st.text_input(
-                    "Message", 
-                    placeholder=t.get('ask_ai', 'Type here and press Enter...'), 
-                    label_visibility="collapsed", 
-                    key="user_input_text_fixed",
-                    on_change=submit_text 
-                )
-            
-            with input_c2:
-                # Key rotation (mic_key) ensures the widget clears after audio is sent
-                audio_result = st.audio_input("Voice", label_visibility="collapsed", key=f"mic_fixed_{st.session_state.mic_key}")
+            # Chat Container
+            chat_container = st.container(height=400)
+            with chat_container:
+                if not st.session_state.chat_messages:
+                    st.info("👋 Hi! I am Krishi-Mitra. Ask me about crops, weather, or mandi prices.")
+                for msg in st.session_state.chat_messages:
+                    avatar = "🌱" if msg["role"] == "user" else "🤖"
+                    with st.chat_message(msg["role"], avatar=avatar):
+                        st.markdown(msg["content"])
+                if st.session_state.pending_audio:
+                    if len(st.session_state.pending_audio) > 1000:
+                        st.audio(st.session_state.pending_audio, autoplay=True)
+                    st.session_state.pending_audio = None
 
-        # --- PROCESSING LOGIC ---
-        if audio_result:
-            audio_id = f"audio_{audio_result.size}_{audio_result.name}"
-            if st.session_state.get('last_processed_audio_id') != audio_id:
-                with chat_container:
-                    with st.spinner("🎙️ Transcribing..."):
-                        try:
-                            audio_bytes = audio_result.getvalue()
-                            transcribed_text = transcribe_audio(audio_bytes, st.session_state.language)
-                            if transcribed_text and not transcribed_text.startswith("Error"):
-                                st.session_state.chat_messages.append({"role": "user", "content": transcribed_text.strip()})
-                                st.session_state.voice_interaction = True
-                                st.session_state.last_processed_audio_id = audio_id
-                                # Increment key to clear the audio widget
-                                st.session_state.mic_key += 1
-                                st.rerun()
-                            elif transcribed_text.startswith("Error"): st.error(transcribed_text)
-                        except Exception as e: st.error(f"Error: {e}")
+            # --- INPUT AREA (Fixed Alignment) ---
+            input_area = st.container()
+            with input_area:
+                st.markdown("""<style>.stTextInput { width: 100% !important; }</style>""", unsafe_allow_html=True)
+                
+                # vertical_alignment="bottom" ensures the mic button sits on the same baseline as the text box
+                input_c1, input_c2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
+                
+                with input_c1:
+                    st.text_input(
+                        "Message", 
+                        placeholder=t.get('ask_ai', 'Type here and press Enter...'), 
+                        label_visibility="collapsed", 
+                        key="user_input_text_fixed",
+                        on_change=submit_text 
+                    )
+                
+                with input_c2:
+                    # Key rotation (mic_key) ensures the widget clears after audio is sent
+                    audio_result = st.audio_input("Voice", label_visibility="collapsed", key=f"mic_fixed_{st.session_state.mic_key}")
 
-        if st.session_state.chat_messages and st.session_state.chat_messages[-1]["role"] == "user":
-            curr_sig = f"{len(st.session_state.chat_messages)}_{st.session_state.chat_messages[-1]['content'][:20]}"
-            if curr_sig != st.session_state.last_processed_msg:
-                st.session_state.last_processed_msg = curr_sig
-                user_msg = st.session_state.chat_messages[-1]["content"]
-                
-                if is_logged_in and st.session_state.current_chat_session_id is None:
-                    user_id = st.session_state.user_profile.get("id")
-                    session_id = create_chat_session(user_email, user_msg, st.session_state.language, user_id)
-                    st.session_state.current_chat_session_id = session_id
-                    st.session_state.chat_history_list = get_user_chat_sessions(user_email)
-                if is_logged_in and st.session_state.current_chat_session_id:
-                    save_message(st.session_state.current_chat_session_id, "user", user_msg)
-                
-                with chat_container:
-                    with st.chat_message("assistant"):
-                        st.markdown(f'<span style="color:#9CA3AF; font-size:0.8rem;">{t.get("ai_typing", "Krishi-Mitra is thinking...")}</span>', unsafe_allow_html=True)
-                        with st.spinner(""):
-                            target_crop = st.session_state.user_profile.get("preferred_crop", "Groundnut") if is_logged_in else "Groundnut"
-                            context = {"city": selected_city, "crop": target_crop, "temp": 30, "crop_history": st.session_state.get('crop_history', [])}
-                            reply = chat_with_krishi_mitra(user_msg, st.session_state.language, context)
-                            st.write(reply)
-                            if st.session_state.get('voice_interaction'):
-                                from bhashini_layer import text_to_speech
-                                audio_bytes = text_to_speech(reply, st.session_state.language)
-                                if audio_bytes: st.session_state.pending_audio = audio_bytes
-                
-                st.session_state.chat_messages.append({"role": "assistant", "content": reply})
-                if is_logged_in and st.session_state.current_chat_session_id:
-                    save_message(st.session_state.current_chat_session_id, "assistant", reply)
-                st.session_state.voice_interaction = False
-                st.rerun()
+            # --- PROCESSING LOGIC ---
+            if audio_result:
+                audio_id = f"audio_{audio_result.size}_{audio_result.name}"
+                if st.session_state.get('last_processed_audio_id') != audio_id:
+                    with chat_container:
+                        with st.spinner("🎙️ Transcribing..."):
+                            try:
+                                audio_bytes = audio_result.getvalue()
+                                transcribed_text = transcribe_audio(audio_bytes, st.session_state.language)
+                                if transcribed_text and not transcribed_text.startswith("Error"):
+                                    st.session_state.chat_messages.append({"role": "user", "content": transcribed_text.strip()})
+                                    st.session_state.voice_interaction = True
+                                    st.session_state.last_processed_audio_id = audio_id
+                                    # Increment key to clear the audio widget
+                                    st.session_state.mic_key += 1
+                                    st.rerun()
+                                elif transcribed_text.startswith("Error"): st.error(transcribed_text)
+                            except Exception as e: st.error(f"Error: {e}")
+
+            if st.session_state.chat_messages and st.session_state.chat_messages[-1]["role"] == "user":
+                curr_sig = f"{len(st.session_state.chat_messages)}_{st.session_state.chat_messages[-1]['content'][:20]}"
+                if curr_sig != st.session_state.last_processed_msg:
+                    st.session_state.last_processed_msg = curr_sig
+                    user_msg = st.session_state.chat_messages[-1]["content"]
+                    
+                    if is_logged_in and st.session_state.current_chat_session_id is None:
+                        user_id = st.session_state.user_profile.get("id")
+                        session_id = create_chat_session(user_email, user_msg, st.session_state.language, user_id)
+                        st.session_state.current_chat_session_id = session_id
+                        st.session_state.chat_history_list = get_user_chat_sessions(user_email)
+                    if is_logged_in and st.session_state.current_chat_session_id:
+                        save_message(st.session_state.current_chat_session_id, "user", user_msg)
+                    
+                    with chat_container:
+                        with st.chat_message("assistant"):
+                            st.markdown(f'<span style="color:#9CA3AF; font-size:0.8rem;">{t.get("ai_typing", "Krishi-Mitra is thinking...")}</span>', unsafe_allow_html=True)
+                            with st.spinner(""):
+                                target_crop = st.session_state.user_profile.get("preferred_crop", "Groundnut") if is_logged_in else "Groundnut"
+                                context = {"city": selected_city, "crop": target_crop, "temp": 30, "crop_history": st.session_state.get('crop_history', [])}
+                                reply = chat_with_krishi_mitra(user_msg, st.session_state.language, context)
+                                st.write(reply)
+                                if st.session_state.get('voice_interaction'):
+                                    from bhashini_layer import text_to_speech
+                                    audio_bytes = text_to_speech(reply, st.session_state.language)
+                                    if audio_bytes: st.session_state.pending_audio = audio_bytes
+                    
+                    st.session_state.chat_messages.append({"role": "assistant", "content": reply})
+                    if is_logged_in and st.session_state.current_chat_session_id:
+                        save_message(st.session_state.current_chat_session_id, "assistant", reply)
+                    st.session_state.voice_interaction = False
+                    st.rerun()
 
     # --- DELETE CONFIRMATION ---
     if st.session_state.get('chat_to_delete'):
@@ -2289,7 +2314,7 @@ with tab_farm:
                 
                 with col_det1:
                     def_name_idx = get_all_crops().index(edit_crop['crop_name']) if is_edit and edit_crop['crop_name'] in get_all_crops() else 0
-                    f_name = st.selectbox(t.get("crop_name_label", "Crop Name"), get_all_crops(), index=def_name_idx, key="new_crop_name")
+                    f_name = st.selectbox(t.get("crop_name_label", "Crop Name"), get_all_crops(), index=def_name_idx, format_func=lambda x: translate_dynamic(x, st.session_state.language), key="new_crop_name")
                 
                 with col_det2:
                     f_area = st.number_input(t.get("area_label", "Cultivated Area (Acres)"), min_value=0.1, value=float(edit_crop['area']) if is_edit else 1.0, step=0.5, key="new_crop_area")

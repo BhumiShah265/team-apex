@@ -150,9 +150,14 @@ CITY_NAMES_GU = {
     "Brinjal": "રીંગણ", "Chilli (Green)": "લીલા મરચાં", "Garlic": "લસણ",
     "Mango (Kesar)": "કેરી (કેસર)", "Banana": "કેળા", "Pomegranate": "દાડમ",
     "Papaya": "પપૈયા", "Sapota (Chikoo)": "ચીકુ", "Sugarcane": "શેરડી",
-    "Tobacco": "તમાકુ", "Oilseed": "તેલીબિયાં", "Fiber": "રેસાવાળા પાક", "Cereal": "ધાન્ય પાક",
+    "Tobacco": "તમાકુ", "Cauliflower": "ફૂલકોબી", "Cabbage": "કોબીજ", "Okra (Bhindi)": "ભીંડા",
+    "Oilseed": "તેલીબિયાં", "Fiber": "રેસાવાળા પાક", "Cereal": "ધાન્ય પાક",
     "Pulse": "કઠોળ", "Spice": "મસાલા પાક", "Vegetable": "શાકભાજી", "Fruit": "ફળો",
-    "Cash Crop": "રોકડિયા પાક"
+    "Cash Crop": "રોકડિયા પાક",
+    "Bolero / Pickup (Max 1.5T)": "બોલેરો / પિકઅપ (મહત્તમ ૧.૫ ટન)",
+    "Tractor Trolley (Max 4T)": "ટ્રેક્ટર ટ્રોલી (મહત્તમ ૪ ટન)",
+    "Eicher / Mini Truck (Max 6T)": "આઈશર / મિની ટ્રક (મહત્તમ ૬ ટન)",
+    "Heavy Truck (10T+)": "ભારે ટ્રક (૧૦ ટન+)"
 }
 
 WEATHER_CONDITIONS_GU = {
