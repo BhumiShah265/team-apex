@@ -48,6 +48,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Avoid NameError if t is not yet defined
+t = {}
+
 # ==========================================
 # 📍 LIVE GPS LOGIC (Integrated from gps.py)
 # ==========================================
@@ -75,7 +78,6 @@ def init_gps_from_component():
         # If we have absolutely no location, BLOCK the app
         c1, c2 = st.columns([1, 20])
         with c1: st.spinner("Acquiring GPS...")
-        # Assuming 't' is defined elsewhere for translations. If not, this line might cause an error.
         with c2: st.info(t.get("waiting_gps", "📍 Waiting for location permission... Please allow access to continue."))
         st.stop()
 
