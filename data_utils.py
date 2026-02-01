@@ -543,14 +543,34 @@ def get_city_from_positionstack(lat, lon):
         print(f"Positionstack error: {e}")
     return None
 
+def get_city_from_nominatim(lat, lon):
+    """
+    Reverse geocoding using OpenStreetMap (Nominatim).
+    Free, no API key required. Great fallback.
+    """
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=10"
+        headers = {'User-Agent': 'KrishiMitraAI/1.0'} # Required by OSM
+        r = requests.get(url, headers=headers, timeout=3)
+        if r.status_code == 200:
+            data = r.json()
+            addr = data.get('address', {})
+            return addr.get('city') or addr.get('town') or addr.get('village') or addr.get('county')
+    except Exception as e:
+        print(f"Nominatim error: {e}")
+    return None
+
 def get_nearest_city(lat, lon):
     """Find the nearest city to given coordinates"""
-    # 1. Try Positionstack first (Real Reverse Geocoding)
+    # 1. Try Positionstack (fastest if key exists)
     real_name = get_city_from_positionstack(lat, lon)
-    if real_name:
-        return real_name
+    if real_name: return real_name
 
-    # 2. Fallback to local dictionary
+    # 2. Try Nominatim (Free, Accurate, Global)
+    real_name_osm = get_city_from_nominatim(lat, lon)
+    if real_name_osm: return real_name_osm
+
+    # 3. Fallback to local dictionary (Gujarat Only)
     nearest = None
     min_dist = float('inf')
     distances = []
@@ -568,6 +588,10 @@ def get_nearest_city(lat, lon):
     for i, (city, dist) in enumerate(distances[:5], 1):
         print(f"  {i}. {city}: {dist:.2f} km")
     
+    # If the nearest Gujarat city is too far (>150km), just return the coordinates
+    if min_dist > 150:
+         return f"Loc: {lat:.2f}, {lon:.2f}"
+         
     return nearest or f"Loc: {lat:.2f}, {lon:.2f}"
 
 # ============================================================

@@ -8,6 +8,7 @@ import requests
 from PIL import Image
 from streamlit_folium import st_folium
 import folium
+from folium import plugins
 
 
 # Core Backend Imports
@@ -29,7 +30,7 @@ from utils.auth_db import login_user, register_user, update_password, generate_o
 from utils.farm_db import init_farm_db, get_farm, save_farm, save_history_record, get_history_records, get_user_crops, save_user_crop, delete_user_crop
 from utils.email_utils import send_otp_email, send_alert_notification
 from utils.sms_utils import send_sms_otp
-from utils.pdf_gen import generate_farm_report
+
 
 # Initialize Farm DB
 try:
@@ -127,6 +128,26 @@ def apply_modern_theme():
         transition: none !important;
     }
     
+    /* Remove top whitespace - Aggressive */
+    .block-container {
+        padding-top: 0rem !important;
+        margin-top: -60px !important; /* Force pull up to cover header space */
+        padding-bottom: 5rem !important;
+        max_width: 100% !important;
+    }
+    
+    /* Hide the Streamlit header bar completely */
+    header[data-testid="stHeader"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0px !important;
+    }
+    
+    /* Also ensure toolbar is hidden if present */
+    div[data-testid="stToolbar"] {
+        display: none !important;
+    }
+     
     [data-testid="stAppViewContainer"] {
         opacity: 1 !important;
         filter: none !important;
@@ -235,25 +256,17 @@ def apply_modern_theme():
     .stat-label { color: var(--text-secondary); font-size: 0.85rem; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
 
     /* Ensure JS iframes are not hidden */
-    iframe {
-        height: 1px !important;
-        width: 1px !important;
-        opacity: 0 !important;
-        border: none !important;
-        position: absolute !important;
-        z-index: -1;
-    }
-    
-    /* Restore Folium Map Visibility (Matches st_folium height=450) */
-    iframe[height="450"], 
-    iframe[height="400"] {
+    /* Restore Folium Map Visibility (Matches st_folium height in code) */
+    iframe[title="streamlit_folium.st_folium"] {
         height: 450px !important;
+        min-height: 450px !important;
         width: 100% !important;
         opacity: 1 !important;
         position: relative !important;
         z-index: 10;
         display: block !important;
     }
+
 
     .stTabs [data-baseweb="tab-list"] { 
         gap: 4px !important; 
@@ -545,7 +558,11 @@ if 'signup_phone_otp' not in st.session_state: st.session_state.signup_phone_otp
 if 'temp_signup_data' not in st.session_state: st.session_state.temp_signup_data = {}
 if 'profile_phone_otp' not in st.session_state: st.session_state.profile_phone_otp = None
 if 'temp_profile_data' not in st.session_state: st.session_state.temp_profile_data = {}
-
+if 'location_source' not in st.session_state: st.session_state.location_source = 'default'
+if 'auto_city' not in st.session_state: st.session_state.auto_city = None
+if 'auto_lat' not in st.session_state: st.session_state.auto_lat = None
+if 'auto_lon' not in st.session_state: st.session_state.auto_lon = None
+if 'location_locked' not in st.session_state: st.session_state.location_locked = False
 # Update translations when language changes
 def update_translations():
     st.session_state.t = get_translations(st.session_state.language)
@@ -1365,18 +1382,111 @@ with tab_dash:
     
     if is_active:
         # --- SATELLITE SECTION ---
-        head_col, zoom_col = st.columns([0.7, 0.3])
+        head_col, zoom_col, pin_col = st.columns([0.6, 0.25, 0.15])
+        
         with head_col:
             st.markdown(f"### {t.get('satellite_view', '🛰️ Aerial Satellite View')}")
+        
         with zoom_col:
             zoom_level = st.slider("Zoom Level", min_value=8, max_value=16, value=12, step=1, label_visibility="visible")
- 
+        
+        # Custom "Pin Location" Control Button Logic implemented directly in map below
+        # Removed Streamlit button to use native map control instead
+
         with st.container(border=True):
-            # We use the coordinates from live_data if available
-            lat_v, lon_v = (coords['lat'], coords['lon']) if coords else (23.0225, 72.5714)
+            # Prefer live GPS if available
+            if st.session_state.get("auto_lat") and st.session_state.get("auto_lon"):
+                lat_v = st.session_state["auto_lat"]
+                lon_v = st.session_state["auto_lon"]
+            elif coords:
+                lat_v, lon_v = coords['lat'], coords['lon']
+            else:
+                lat_v, lon_v = 23.0225, 72.5714
             
             # Create an interactive Folium map with scroll-trap prevention
-            m = folium.Map(location=[lat_v, lon_v], zoom_start=zoom_level, control_scale=True, tiles=None, scrollWheelZoom=False)
+            # 1. Use Google Satellite Hybrid as the DEFAULT base tile
+            m = folium.Map(
+                location=[lat_v, lon_v], 
+                zoom_start=zoom_level, 
+                control_scale=True, 
+                tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+                attr='Google',
+                scrollWheelZoom=False
+            )
+            
+            # 📍 Exact current location marker (Session State Backup)
+            if st.session_state.get("force_pin"):
+                folium.Marker(
+                    [lat_v, lon_v],
+                    tooltip="Your Exact Location",
+                    icon=folium.Icon(color="green", icon="crosshairs", prefix="fa")
+                ).add_to(m)
+
+                # Optional accuracy circle
+                folium.Circle(
+                    radius=30,
+                    location=[lat_v, lon_v],
+                    color="green",
+                    fill=True,
+                    fill_opacity=0.15
+                ).add_to(m)
+                
+                st.session_state["force_pin"] = False
+
+            # --- CUSTOM LOCATE BUTTON (Native Leaflet Control) ---
+            from branca.element import MacroElement
+            from jinja2 import Template
+
+            class CustomLocateButton(MacroElement):
+                def __init__(self):
+                    super().__init__()
+                    self._template = Template("""
+                    {% macro script(this, kwargs) %}
+
+                    var map = {{this._parent.get_name()}};
+
+                    // Create custom control
+                    var customControl = L.Control.extend({
+                        options: { position: 'topleft' },
+
+                        onAdd: function(map) {
+                            var btn = L.DomUtil.create('button');
+                            btn.innerHTML = "📍";  
+                            btn.style.background = "white";
+                            btn.style.width = "34px";
+                            btn.style.height = "34px";
+                            btn.style.border = "2px solid #999";
+                            btn.style.borderRadius = "6px";
+                            btn.style.cursor = "pointer";
+                            btn.style.fontSize = "18px";
+                            btn.style.marginTop = "6px";
+
+                            L.DomEvent.disableClickPropagation(btn);
+
+                            btn.onclick = function(){
+                                map.locate({setView: true, maxZoom: 16});
+
+                                map.on('locationfound', function(e){
+                                    if (window._liveMarker) {
+                                        map.removeLayer(window._liveMarker);
+                                    }
+
+                                    window._liveMarker = L.marker(e.latlng).addTo(map);
+                                });
+                            }
+
+                            return btn;
+                        }
+                    });
+
+                    map.addControl(new customControl());
+
+                    {% endmacro %}
+                    """)
+
+            m.add_child(CustomLocateButton())
+
+
             
             # --- 🛠️ Implementation of Option B: Ctrl+Scroll to Zoom ---
             from branca.element import Element, MacroElement
@@ -1413,21 +1523,12 @@ with tab_dash:
                     """)
             
             m.add_child(CtrlScrollZoom())
-            
-            # Add Satellite Tiles (Esri World Imagery)
+
+            # 2. Add Satellite Tiles (Esri World Imagery)
             folium.TileLayer(
                 tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                 attr='Esri',
-                name='Satellite',
-                overlay=False,
-                control=True
-            ).add_to(m)
-
-            # Add Google Satellite Hybrid
-            folium.TileLayer(
-                tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-                attr='Google',
-                name='Google Hybrid',
+                name='Esri Satellite',
                 overlay=False,
                 control=True
             ).add_to(m)
@@ -1444,8 +1545,17 @@ with tab_dash:
                 control=True
             ).add_to(m)
             
-            # Add the "My Location" button plugin
-            folium.plugins.LocateControl(auto_start=False).add_to(m)
+            # Add the "My Location" button (Browser Geolocation)
+            # Add the "My Location" button (Browser Geolocation)
+            # Inject CSS to ensure visibility over satellite tiles
+            m.get_root().header.add_child(folium.Element("""
+                <style>
+                    .leaflet-control-locate {
+                        z-index: 9999 !important;
+                    }
+                </style>
+            """))
+            
             
             # Add layer control to switch between base maps
             folium.LayerControl().add_to(m)
@@ -1453,18 +1563,8 @@ with tab_dash:
             # Render the map with st_folium
             st_folium(m, height=450, width="100%", key="satellite_map_dashboard", returned_objects=[])
 
-            # --- LIVE LOCATION HUD UNDER MAP ---
-            loc_label = "📍 પકડાયેલ લોકેશન" if st.session_state.language == 'gu' else "📍 Detected Live Location"
-            st.markdown(f"""
-                <div style="background: rgba(46, 204, 113, 0.05); border: 1px solid rgba(46, 204, 113, 0.2); 
-                            border-radius: 0 0 12px 12px; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center;
-                            margin-top: -5px; backdrop-filter: blur(5px);">
-                    <div style="font-size: 0.85rem; color: #2ECC71; font-weight: 600;">{loc_label}: {city_display}</div>
-                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); font-family: monospace;">
-                        LAT: {lat_v:.4f} | LON: {lon_v:.4f} | {st.session_state.get('location_source', 'GPS').upper()}
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
+            # --- LIVE LOCATION HUD REMOVED AS REQUESTED ---
+
         
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1488,8 +1588,39 @@ with tab_dash:
                 chart_data[cr] = [x['price'] for x in t_data]
                 
             import pandas as pd
-            df_trends = pd.DataFrame(chart_data, index=dates)
-            st.line_chart(df_trends)
+            import plotly.express as px
+
+            # Create DataFrame
+            df_trends = pd.DataFrame(chart_data)
+            df_trends['Date'] = dates
+            
+            # Melt for Plotly
+            df_long = df_trends.melt('Date', var_name='Crop', value_name='Price')
+            
+            # Create Plotly Chart
+            fig = px.line(df_long, x='Date', y='Price', color='Crop', 
+                          markers=True)
+            
+            fig.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#E2E8F0'),
+                xaxis=dict(showgrid=False, title=None),
+                yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', title=t.get('price_quintal', 'Price (₹/Q)')),
+                hovermode="x unified",
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1,
+                    title=None
+                ),
+                margin=dict(l=0, r=0, t=30, b=0)
+            )
+            
+            # Config ensuring scroll is safe (Page Scroll works, Chart Zoom via Toolbar/Drag)
+            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': False, 'displayModeBar': True})
         
     else:
         # Denied State Placeholders
@@ -2211,97 +2342,7 @@ with tab_farm:
             f_city = user_farm_profile.get('city', 'Unknown') if user_farm_profile else 'Unknown'
             f_size = user_farm_profile.get('size', 0.0) if user_farm_profile else 0.0
             
-            # Gather live data for PDF if permission given
-            live_pdf = st.session_state.get('live_data')
-            
-            try:
-                # Prepare translated data for PDF
-                lang = st.session_state.language
-                t_pdf = st.session_state.t
-                
-                # Helper to ensure string is clean UTF-8 and safe for PDF
-                def clean_str(s):
-                    if not s: return ""
-                    return str(s).encode('utf-8', 'ignore').decode('utf-8')
-
-                # Copy crops and translate names/status if needed
-                translated_active_crops = []
-                for c in active_crops:
-                    c_copy = c.copy()
-                    c_copy['crop_name'] = clean_str(translate_dynamic(c.get('crop_name', ''), lang))
-                    c_copy['health_status'] = clean_str(translate_dynamic(c.get('health_status', 'N/A'), lang))
-                    translated_active_crops.append(c_copy)
-                
-                t_city = clean_str(translate_dynamic(f_city, lang))
-                u_name_clean = clean_str(u_name)
-                u_email_clean = clean_str(u_email)
-                
-                report_bytes = generate_farm_report(u_name_clean, u_email_clean, t_city, f_size, translated_active_crops, live_pdf, lang_code=lang, t=t_pdf)
-                
-                # Explicitly ensure bytes
-                if isinstance(report_bytes, str):
-                    report_bytes = report_bytes.encode('latin-1')
-                else:
-                    report_bytes = bytes(report_bytes)
-                
-                # Custom minimal text-only button style for export
-                st.markdown("""
-                <style>
-                div[data-testid="stColumn"] button[kind="secondary"] {
-                    background: transparent !important;
-                    border: none !important;
-                    color: #2ECC71 !important;
-                    box-shadow: none !important;
-                    font-weight: 600 !important;
-                    text-align: right !important;
-                    padding-right: 0 !important;
-                }
-                div[data-testid="stColumn"] button[kind="secondary"]:hover {
-                    color: #27AE60 !important;
-                    text-decoration: underline !important;
-                }
-
-                /* 🌀 REINFORCED HUD LOADING INDICATOR */
-                [data-testid="stAppViewContainer"][data-test-script-state="running"]::after {
-                    content: "KRISHI-MITRA AI IS THINKING..." !important;
-                    position: fixed !important;
-                    top: 20px !important;
-                    left: 50% !important;
-                    transform: translateX(-50%) !important;
-                    background: rgba(8, 9, 10, 0.95) !important;
-                    color: #2ECC71 !important;
-                    padding: 10px 30px !important;
-                    border-radius: 99px !important;
-                    font-weight: 600 !important;
-                    font-size: 0.8rem !important;
-                    letter-spacing: 2px !important;
-                    z-index: 2147483647 !important;
-                    box-shadow: 0 10px 40px rgba(0, 0, 0, 1), 0 0 30px rgba(46, 204, 113, 0.3) !important;
-                    animation: slideDownFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards, pulseEmerald 2s infinite !important;
-                    backdrop-filter: blur(20px) !important;
-                    -webkit-backdrop-filter: blur(20px) !important;
-                    border: 1px solid rgba(46, 204, 113, 0.5) !important;
-                    display: flex !important;
-                    align-items: center !important;
-                    justify-content: center !important;
-                    text-transform: uppercase !important;
-                    pointer-events: none !important;
-                }
-                </style>
-                """, unsafe_allow_html=True)
-                
-                st.download_button(
-                    label=t.get('export_report', 'Export Report'),
-                    data=report_bytes,
-                    file_name=f"Farm_Report_{datetime.datetime.now().strftime('%Y%m%d')}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                    key="export_report_btn",
-                    type="secondary"
-                )
-            except Exception as e:
-                print(f"PDF EXCEPTION: {e}")
-                st.error(f"PDF Error: {e}")
+            # PDF feature removed as requested
 
         # --- 3. Dialogs & Modals ---
         @st.dialog(t.get("delete", "Delete"))
@@ -2373,7 +2414,11 @@ with tab_farm:
                     zoom_start = 12
 
                 # Create Folium Map with Scroll-Shield to prevent page scroll trap
-                m = folium.Map(location=[start_lat, start_lon], zoom_start=zoom_start, scrollWheelZoom=False)
+                # Use tiles=None to manage layers manually and set Satellite as default if desired, 
+                # or we can keep default but we MUST add LayerControl to switch.
+                # Given the user said "removed satellite view", we should probably ensure it's the default or easily switchable.
+                # We'll set tiles=None and add layers manually, starting with Satellite to make it default.
+                m = folium.Map(location=[start_lat, start_lon], zoom_start=zoom_start, scrollWheelZoom=False, tiles=None)
                 
                 # Consistent Scroll-Shield Implementation
                 from branca.element import Element, MacroElement
@@ -2407,22 +2452,63 @@ with tab_farm:
                 
                 m.add_child(CtrlScrollZoom())
                 
-                # Add Satellite Tiles (Esri World Imagery)
+                # 1. Google Satellite Hybrid (Best for Farm details) - Default
                 folium.TileLayer(
-                    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                    attr='Esri',
-                    name='Satellite',
+                    tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+                    attr='Google',
+                    name='Google Satellite',
                     overlay=False,
                     control=True
                 ).add_to(m)
 
-                # Add Labels overlay
+                # 2. Esri World Imagery (Backup Satellite)
                 folium.TileLayer(
-                    tiles='https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
-                    attr='CartoDB',
-                    name='Labels',
-                    overlay=True,
+                    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    attr='Esri',
+                    name='Esri Satellite',
+                    overlay=False,
                     control=True
+                ).add_to(m)
+
+                # 3. Standard Street Map
+                folium.TileLayer(
+                    'CartoDB positron',
+                    name='Street Map',
+                    overlay=False,
+                    control=True
+                ).add_to(m)
+
+                # Add Labels overlay (Optional, but Google Hybrid already has labels)
+                # folium.TileLayer(
+                #     tiles='https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
+                #     attr='CartoDB',
+                #     name='Labels',
+                #     overlay=True,
+                #     control=True
+                # ).add_to(m)
+                
+                # Add Layer Control to switch/toggle
+                folium.LayerControl().add_to(m)
+
+                # Add My Location Button
+                # Inject CSS to ensure visibility
+                m.get_root().header.add_child(folium.Element("""
+                    <style>
+                        .leaflet-control-locate {
+                            z-index: 9999 !important;
+                        }
+                    </style>
+                """))
+                
+                plugins.LocateControl(
+                    position='topright',
+                    auto_start=False,      # False = User must click button to trigger
+                    flyTo=True,            # Enables smooth Pan and Zoom to user's location
+                    drawCircle=True,       # Draws the blue accuracy circle
+                    drawMarker=True,       # Draws the blue location marker/dot
+                    showPopup=True,        # Shows a popup with accuracy info
+                    strings={'title': "Jump to my live location"}, # Tooltip text
+                    locateOptions={'maxZoom': 16} # How far to zoom in (16 is street level)
                 ).add_to(m)
 
                 # Add marker if editing
