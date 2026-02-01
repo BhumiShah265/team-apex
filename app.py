@@ -1082,10 +1082,13 @@ def logout_modal():
 @st.dialog(t.get("login", "Login"))
 def login_modal():
     st.markdown(f"### {t.get('login_title', 'Welcome Back')}")
-    email = st.text_input(t.get("email", "Email Address"))
-    password = st.text_input(t.get("password", "Password"), type="password")
+    with st.form("login_form"):
+        email = st.text_input(t.get("email", "Email Address"))
+        password = st.text_input(t.get("password", "Password"), type="password")
+        
+        submitted = st.form_submit_button(t.get("login_btn", "Log In"), type="primary", use_container_width=True)
     
-    if st.button(t.get("login_btn", "Log In"), type="primary", use_container_width=True):
+    if submitted:
         if not email or not password:
             st.error("Please enter both email and password")
         else:
@@ -1196,24 +1199,33 @@ def signup_modal():
             import base64
             b64_img = base64.b64encode(profile_img.getvalue()).decode()
 
-    name = st.text_input(t.get("full_name", "Full Name"))
-    email = st.text_input(t.get("email", "Email Address"))
-    phone = st.text_input(t.get("phone_number", "Phone Number (10 Digits)"), max_chars=10)
-    password = st.text_input(t.get("password", "Password"), type="password")
-    
-    all_cities = get_all_cities()
-    auto_city = st.session_state.get('auto_city', 'Rajkot')
-    try:
-        city_idx = all_cities.index(auto_city)
-    except ValueError:
-        city_idx = 0
+    with st.form("signup_form"):
+        # Image uploader inside form works fine - it just won't preview instantly unless we move preview logic out or rely on rerun
+        # Ideally, keep simple inputs here. For the image preview to work interactively, we might keep uploader OUTSIDE or just accept no preview till submit? 
+        # Actually, Streamlit forms batch everything. We can keep uploader outside for preview, and inputs inside. 
+        # But this breaks the "single flow". Let's put everything inside.
         
-    def fmt_city(x):
-        return translate_dynamic(x, st.session_state.language)
+        name = st.text_input(t.get("full_name", "Full Name"))
+        email = st.text_input(t.get("email", "Email Address"))
+        phone = st.text_input(t.get("phone_number", "Phone Number (10 Digits)"), max_chars=10)
+        password = st.text_input(t.get("password", "Password"), type="password")
         
-    selected_city_val = st.selectbox(f"📍 {t.get('city', 'Your City')}", all_cities, index=city_idx, format_func=fmt_city)
-    
-    if st.button(t.get("signup_btn", "Create Account"), type="primary", use_container_width=True):
+        all_cities = get_all_cities()
+        auto_city = st.session_state.get('auto_city', 'Rajkot')
+        try:
+            city_idx = all_cities.index(auto_city)
+        except ValueError:
+            city_idx = 0
+            
+        def fmt_city(x):
+            return translate_dynamic(x, st.session_state.language)
+            
+        selected_city_val = st.selectbox(f"📍 {t.get('city', 'Your City')}", all_cities, index=city_idx, format_func=fmt_city)
+        
+        submitted = st.form_submit_button(t.get("signup_btn", "Create Account"), type="primary", use_container_width=True)
+
+    if submitted:
+
         if not name or not email or not password or not phone:
             st.error("Please fill in all required fields.")
         else:
