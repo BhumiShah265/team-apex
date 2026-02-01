@@ -46,20 +46,22 @@ def generate_farm_report(user_name, user_email, city, size, active_crops, live_d
     """
     Generate a PDF report for the user's farm supporting multiple languages.
     """
-    if t is None:
-        t = {} # Fallback
+    if t is None: t = {}
 
     pdf = FarmReport(lang_code=lang_code)
     pdf.alias_nb_pages()
     pdf.add_page()
     
-    font_main = pdf.custom_font if lang_code == 'gu' else 'Arial'
-    
+    # helper for localized text
+    def put_text(text, font_size=10, style='', ln=1, align='L', fill=0):
+        # Determine if text has Gujarati characters
+        has_gujarati = any('\u0a80' <= c <= '\u0aff' for c in text)
+        font = pdf.custom_font if (has_gujarati or lang_code == 'gu') else 'Arial'
+        pdf.set_font(font, style, font_size)
+        pdf.cell(0, 7 if ln else 0, text, 0, ln, align, fill)
+
     # User Profile Section
-    pdf.set_font(font_main, 'B' if lang_code == 'en' else '', 12)
-    pdf.cell(0, 10, t.get('farm_profile_label', 'Farm Profile' if lang_code == 'en' else 'ખેતર પ્રોફાઇલ'), 0, 1, 'L')
-    
-    pdf.set_font(font_main, '', 10)
+    put_text(t.get('farm_profile_label', 'Farm Profile'), font_size=12, style='B')
     
     lbl_name = 'Farmer Name' if lang_code == 'en' else 'ખેડૂતનું નામ'
     lbl_email = 'Email' if lang_code == 'en' else 'ઇમેઇલ'
@@ -67,19 +69,17 @@ def generate_farm_report(user_name, user_email, city, size, active_crops, live_d
     lbl_size = t.get('farm_size', 'Farm Size')
     lbl_gen = 'Generated On' if lang_code == 'en' else 'રિપોર્ટ તારીખ'
     
-    pdf.cell(0, 7, f"{lbl_name}: {user_name}", 0, 1, 'L')
-    pdf.cell(0, 7, f"{lbl_email}: {user_email}", 0, 1, 'L')
-    pdf.cell(0, 7, f"{lbl_loc}: {city}", 0, 1, 'L')
-    pdf.cell(0, 7, f"{lbl_size}: {size} Acres", 0, 1, 'L')
-    pdf.cell(0, 7, f"{lbl_gen}: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", 0, 1, 'L')
+    put_text(f"{lbl_name}: {user_name}", font_size=10)
+    put_text(f"{lbl_email}: {user_email}", font_size=10)
+    put_text(f"{lbl_loc}: {city}", font_size=10)
+    put_text(f"{lbl_size}: {size} Acres", font_size=10)
+    put_text(f"{lbl_gen}: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", font_size=10)
     pdf.ln(5)
     
     # Live Environment Section
     if live_data:
-        pdf.set_font(font_main, 'B' if lang_code == 'en' else '', 12)
-        pdf.cell(0, 10, t.get('micro_climate', 'Micro-Climate'), 0, 1, 'L')
+        put_text(t.get('micro_climate', 'Micro-Climate'), font_size=12, style='B')
         
-        pdf.set_font(font_main, '', 10)
         w = live_data.get('weather', {})
         s = live_data.get('soil', {})
         
@@ -88,21 +88,24 @@ def generate_farm_report(user_name, user_email, city, size, active_crops, live_d
         lbl_soil_m = t.get('soil_moisture', 'Soil Moisture')
         lbl_soil_t = t.get('soil_temp', 'Soil Temp')
         
-        pdf.cell(0, 7, f"{lbl_temp}: {w.get('temp', '--')}°C | {lbl_hum}: {w.get('humidity', '--')}%", 0, 1, 'L')
-        pdf.cell(0, 7, f"{lbl_soil_m}: {s.get('moisture', '--')}% | {lbl_soil_t}: {s.get('soil_temp', '--')}°C", 0, 1, 'L')
+        # Avoid ° symbol to eliminate encoding issues, use "C" or "Celsius"
+        temp_val = f"{w.get('temp', '--')} C"
+        soil_temp_val = f"{s.get('soil_temp', '--')} C"
+        
+        put_text(f"{lbl_temp}: {temp_val} | {lbl_hum}: {w.get('humidity', '--')}%", font_size=10)
+        put_text(f"{lbl_soil_m}: {s.get('moisture', '--')}% | {lbl_soil_t}: {soil_temp_val}", font_size=10)
         pdf.ln(5)
 
     # Active Crops Section
-    pdf.set_font(font_main, 'B' if lang_code == 'en' else '', 12)
-    pdf.cell(0, 10, t.get('active_crop_fields', 'Active Crop Fields' if lang_code == 'en' else 'સક્રિય પાક ક્ષેત્રો'), 0, 1, 'L')
+    put_text(t.get('active_crop_fields', 'Active Crop Fields'), font_size=12, style='B')
     pdf.ln(2)
     
     if not active_crops:
-        pdf.set_font(font_main, 'I' if lang_code == 'en' else '', 10)
-        pdf.cell(0, 10, t.get('no_crops_added', 'No active crops registered.'), 0, 1, 'L')
+        put_text(t.get('no_crops_added', 'No active crops registered.'), font_size=10, style='I')
     else:
         # Table Header
-        pdf.set_font(font_main, 'B' if lang_code == 'en' else '', 10)
+        header_font = pdf.custom_font if lang_code == 'gu' else 'Arial'
+        pdf.set_font(header_font, 'B' if lang_code == 'en' else '', 10)
         pdf.set_fill_color(240, 240, 240)
         
         pdf.cell(50, 8, t.get('crop_name_label', 'Crop Name'), 1, 0, 'C', 1)
@@ -112,24 +115,28 @@ def generate_farm_report(user_name, user_email, city, size, active_crops, live_d
         pdf.cell(40, 8, 'Health' if lang_code == 'en' else 'સ્વાસ્થ્ય', 1, 1, 'C', 1)
         
         # Table Body
-        pdf.set_font(font_main, '', 9)
         for crop in active_crops:
-            # We assume crop names and statuses might be in English stored in DB,
-            # but in a real app these would also be translated.
-            # For now we use them as is or they can be translated before passing.
-            pdf.cell(50, 8, str(crop['crop_name']), 1, 0, 'C')
+            c_name = str(crop['crop_name'])
+            # Decide font for each cell
+            pdf.set_font(pdf.custom_font if any('\u0a80' <= char <= '\u0aff' for char in c_name) else 'Arial', '', 9)
+            pdf.cell(50, 8, c_name, 1, 0, 'C')
+            
+            pdf.set_font('Arial', '', 9)
             pdf.cell(30, 8, str(crop['area']), 1, 0, 'C')
             pdf.cell(35, 8, str(crop['planting_date']), 1, 0, 'C')
             pdf.cell(35, 8, str(crop.get('chlorophyll', 'N/A')), 1, 0, 'C')
-            pdf.cell(40, 8, str(crop.get('health_status', 'N/A')), 1, 1, 'C')
+            
+            h_status = str(crop.get('health_status', 'N/A'))
+            pdf.set_font(pdf.custom_font if any('\u0a80' <= char <= '\u0aff' for char in h_status) else 'Arial', '', 9)
+            pdf.cell(40, 8, h_status, 1, 1, 'C')
 
     # Footer Note
     pdf.ln(10)
-    pdf.set_font(font_main, 'I' if lang_code == 'en' else '', 8)
     note = "Note: This report is generated by Krishi-Mitra AI. Plant health analysis is based on image processing and current environmental data. For critical farming decisions, please consult with an agricultural expert."
     if lang_code == 'gu':
         note = "નોંધ: આ રિપોર્ટ કૃષિ-મિત્ર AI દ્વારા તૈયાર કરવામાં આવ્યો છે. છોડના સ્વાસ્થ્યનું વિશ્લેષણ ઈમેજ પ્રોસેસિંગ અને વર્તમાન પર્યાવરણીય ડેટા પર આધારિત છે. ખેતીના મહત્વના નિર્ણયો માટે, કૃપા કરીને કૃષિ નિષ્ણાતની સલાહ લો."
     
+    pdf.set_font(pdf.custom_font if lang_code == 'gu' else 'Arial', 'I' if lang_code == 'en' else '', 8)
     pdf.multi_cell(0, 5, note)
     
-    return bytes(pdf.output())
+    return pdf.output()
