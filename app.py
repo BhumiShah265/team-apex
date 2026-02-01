@@ -64,28 +64,28 @@ def init_gps_from_component():
         return
 
     # 2. Pulse detection (Render the component)
-    loc = get_geolocation(component_key=f"get_loc_{now.minute}") # Dynamic key to force refresh
+    loc = get_geolocation(component_key=f"get_loc_{now.minute}") 
     
-    if loc and 'coords' in loc:
-        lat = float(loc['coords']['latitude'])
-        lon = float(loc['coords']['longitude'])
-        source = 'browser'
-        # Reset the 5-min timer
-        st.session_state['last_gps_time'] = now
-    else:
-        # IP Fallback (Silent)
-        if st.session_state.get('location_source') == 'default':
-            try:
-                r = requests.get('http://ip-api.com/json', timeout=2).json()
-                if r.get('status') == 'success':
-                    lat, lon = r.get('lat'), r.get('lon')
-                    source = 'ip'
-                    st.session_state['last_gps_time'] = now # Pulse IP also
-                else: return
-            except: return
-        else: return
+    # STRICT MODE: If we don't have browser coords, we WAIT.
+    if not loc or 'coords' not in loc:
+        # Check if we already have a saved location from a previous run to avoid flickering
+        if st.session_state.get('auto_lat'):
+            return
 
-    # Update state only if changed
+        # If we have absolutely no location, BLOCK the app
+        c1, c2 = st.columns([1, 20])
+        with c1: st.spinner("Acquiring GPS...")
+        # Assuming 't' is defined elsewhere for translations. If not, this line might cause an error.
+        with c2: st.info(t.get("waiting_gps", "📍 Waiting for location permission... Please allow access to continue."))
+        st.stop()
+
+    # If we get here, we have coords
+    lat = float(loc['coords']['latitude'])
+    lon = float(loc['coords']['longitude'])
+    source = 'browser'
+    st.session_state['last_gps_time'] = now
+
+    # Update state only if changed and valid
     if st.session_state.get('auto_lat') != lat or st.session_state.get('auto_lon') != lon:
         st.session_state['auto_lat'] = lat
         st.session_state['auto_lon'] = lon
