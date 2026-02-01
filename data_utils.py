@@ -137,6 +137,7 @@ GUJARAT_CITIES = {
     "Valod": {"lat": 21.0333, "lon": 73.1667, "district": "Tapi"},
     "Kukarmunda": {"lat": 21.0667, "lon": 73.5000, "district": "Tapi"},
     "Dolvan": {"lat": 21.1000, "lon": 73.4500, "district": "Tapi"},
+    "Chikhli": {"lat": 20.7600, "lon": 73.0600, "district": "Navsari"},
 }
 
 GUJARAT_CROPS = {
@@ -318,36 +319,11 @@ def calculate_arbitrage(crop: str, user_lat: float, user_lon: float, quantity: f
 # LIVE WEATHER & SOIL (With Caching)
 # ============================================================
 
+@st.cache_data(ttl=60, show_spinner=False)
 def get_live_weather(lat: float, lon: float) -> dict:
-    # PRIORITY 1: OpenWeatherMap (Matches Google/General Search results best)
-    # Note: OWM provides Wind Speed in Meters/Second (m/s) by default
-    if WEATHER_API_KEY:
-        try:
-            url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={WEATHER_API_KEY}&units=metric"
-            r = requests.get(url, timeout=3)
-            if r.status_code == 200:
-                d = r.json()
-                
-                # --- WIND CALCULATION FIX ---
-                # OWM gives m/s. We MUST convert to km/h for Indian users.
-                # Formula: Value * 3.6
-                raw_wind_ms = d["wind"]["speed"]
-                wind_kmh = round(raw_wind_ms * 3.6, 1)
-
-                return {
-                    "temp": d["main"]["temp"],
-                    "humidity": d["main"]["humidity"],
-                    "description": d["weather"][0]["description"].title(),
-                    "wind_speed": wind_kmh, # Converted to km/h
-                    "feels_like": d["main"]["feels_like"],
-                    "api_source": "OpenWeather"
-                }
-        except Exception as e:
-            print(f"OWM Error: {e}")
-
-    # PRIORITY 2: Open-Meteo (Scientific Backup - No Key Needed)
+    # PRIORITY 1: Open-Meteo (High Accuracy for Humidity in Gujarat/India)
+    # Uses ECMWF & GFS models which are often more precise for coastal regions
     try:
-        # Requesting wind_speed_10m directly in kmh
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&wind_speed_unit=kmh"
         r = requests.get(url, timeout=3)
         if r.status_code == 200:
@@ -365,16 +341,40 @@ def get_live_weather(lat: float, lon: float) -> dict:
                 "temp": curr["temperature_2m"],
                 "humidity": curr["relative_humidity_2m"],
                 "description": desc,
-                "wind_speed": curr["wind_speed_10m"], # Already in km/h via URL param
+                "wind_speed": curr["wind_speed_10m"],
                 "feels_like": curr["temperature_2m"],
-                "api_source": "Open-Meteo"
+                "api_source": "Open-Meteo (Satellite)"
             }
     except Exception as e:
         print(f"OpenMeteo Error: {e}")
 
+    # PRIORITY 2: OpenWeatherMap (Matches Google/General Search results best)
+    if WEATHER_API_KEY:
+        try:
+            url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={WEATHER_API_KEY}&units=metric"
+            r = requests.get(url, timeout=3)
+            if r.status_code == 200:
+                d = r.json()
+                
+                # --- WIND CALCULATION FIX ---
+                raw_wind_ms = d["wind"]["speed"]
+                wind_kmh = round(raw_wind_ms * 3.6, 1)
+
+                return {
+                    "temp": d["main"]["temp"],
+                    "humidity": d["main"]["humidity"],
+                    "description": d["weather"][0]["description"].title(),
+                    "wind_speed": wind_kmh,
+                    "feels_like": d["main"]["feels_like"],
+                    "api_source": f"OpenWeather ({d.get('name', 'Unknown')})"
+                }
+        except Exception as e:
+            print(f"OWM Error: {e}")
+
     # Fallback
     return {"temp": "--", "humidity": "--", "description": "--", "wind_speed": "--", "api_source": "None"}
 
+@st.cache_data(ttl=60, show_spinner=False)
 def get_live_soil(lat: float, lon: float) -> dict:
     try:
         # Open-Meteo is free and fast
@@ -392,7 +392,7 @@ def get_live_soil(lat: float, lon: float) -> dict:
     except: pass
     return {"moisture": 30, "soil_temp": 28, "evaporation": 0.4, "root_moisture": 35, "api_source": "Fallback"}
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def get_live_field_data(city_name: str, lat: float = None, lon: float = None) -> dict:
     """Master function to get all dashboard data"""
     if not lat:

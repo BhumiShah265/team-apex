@@ -1,12 +1,13 @@
 import streamlit as st
 import streamlit.components.v1 as components
+from streamlit_js_eval import get_geolocation
 import os
 import datetime
 import random
 import requests
 from PIL import Image
 from streamlit_folium import st_folium
-from get_location import get_gps_component
+import folium
 
 
 # Core Backend Imports
@@ -45,6 +46,59 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+# ==========================================
+# 📍 LIVE GPS LOGIC (Integrated from gps.py)
+# ==========================================
+def init_gps_from_component():
+    """
+    PULSE GPS LOGIC:
+    Only activates the sensor every 5 minutes to save battery/continuous tracking.
+    """
+    now = datetime.datetime.now()
+    last_check = st.session_state.get('last_gps_time', datetime.datetime.min)
+    
+    # 1. Wait at least 5 mins between browser GPS pulses
+    if (now - last_check).total_seconds() < 300:
+        return
+
+    # 2. Pulse detection (Render the component)
+    loc = get_geolocation(component_key=f"get_loc_{now.minute}") # Dynamic key to force refresh
+    
+    if loc and 'coords' in loc:
+        lat = float(loc['coords']['latitude'])
+        lon = float(loc['coords']['longitude'])
+        source = 'browser'
+        # Reset the 5-min timer
+        st.session_state['last_gps_time'] = now
+    else:
+        # IP Fallback (Silent)
+        if st.session_state.get('location_source') == 'default':
+            try:
+                r = requests.get('http://ip-api.com/json', timeout=2).json()
+                if r.get('status') == 'success':
+                    lat, lon = r.get('lat'), r.get('lon')
+                    source = 'ip'
+                    st.session_state['last_gps_time'] = now # Pulse IP also
+                else: return
+            except: return
+        else: return
+
+    # Update state only if changed
+    if st.session_state.get('auto_lat') != lat or st.session_state.get('auto_lon') != lon:
+        st.session_state['auto_lat'] = lat
+        st.session_state['auto_lon'] = lon
+        st.session_state['location_source'] = source
+        st.session_state['location_locked'] = True
+        
+        from data_utils import get_nearest_city
+        found_city = get_nearest_city(lat, lon)
+        st.session_state['auto_city'] = found_city
+        st.session_state.live_data = None 
+        st.rerun()
+
+# RUN THE LOGIC
+init_gps_from_component()
 
 def apply_modern_theme():
     st.markdown('<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">', unsafe_allow_html=True)
@@ -85,6 +139,41 @@ def apply_modern_theme():
         margin: 0 auto !important;
     }
 
+    /* 🔴 ANTI-DULL LOGIC: Keep screen 100% vibrant, no transparency or fading */
+    [data-testid="stAppViewContainer"][data-test-script-state="running"] > section {
+        opacity: 1 !important;
+        filter: none !important;
+    }
+
+    /* 🟢 PRO LOADING OVERLAY: Centered, prominent loading state */
+    [data-testid="stAppViewContainer"][data-test-script-state="running"]::after {
+        content: "🌱 KRISHI-MITRA AI IS LOADING...";
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(15, 23, 42, 0.9);
+        color: #2ECC71;
+        padding: 24px 48px;
+        border-radius: var(--radius-lg);
+        font-weight: 800;
+        letter-spacing: 2px;
+        z-index: 999999;
+        box-shadow: 0 0 60px rgba(46, 204, 113, 0.2);
+        border: 1px solid rgba(46, 204, 113, 0.4);
+        animation: loadingPulse 1.2s infinite ease-in-out;
+        font-size: 1rem;
+        backdrop-filter: blur(10px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    @keyframes loadingPulse {
+        0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; box-shadow: 0 0 40px rgba(46, 204, 113, 0.2); }
+        50% { transform: translate(-50%, -50%) scale(1.02); opacity: 1; box-shadow: 0 0 80px rgba(46, 204, 113, 0.4); }
+    }
+
     .bento-card {
         background: var(--surface-glass);
         backdrop-filter: blur(12px);
@@ -96,6 +185,29 @@ def apply_modern_theme():
         height: 100%;
         box-shadow: 0 4px 20px rgba(0,0,0,0.2);
         margin-bottom: 1rem;
+    }
+
+    /* 🧠 TYPING INDICATOR: High-end AI loading state */
+    .typing-indicator {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 0;
+    }
+    .typing-dot {
+        width: 7px;
+        height: 7px;
+        background: #2ECC71;
+        border-radius: 50%;
+        animation: pulseDots 1.4s infinite;
+        opacity: 0.4;
+    }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes pulseDots {
+        0%, 100% { transform: scale(0.8); opacity: 0.4; }
+        50% { transform: scale(1.1); opacity: 1; }
     }
     .bento-card:hover { transform: translateY(-2px); border-color: rgba(46, 204, 113, 0.3); }
 
@@ -327,7 +439,16 @@ apply_modern_theme()
 # ==========================================
 # 2. APP STATE & LOCALIZATION
 # ==========================================
+import datetime # Added import for datetime
+
 if "language" not in st.session_state: st.session_state.language = "en"
+st.session_state.setdefault("location_locked", False)
+st.session_state.setdefault("location_source", "default")
+st.session_state.setdefault("last_gps_time", datetime.datetime.min)
+if st.session_state.get("auto_city") is None: st.session_state["auto_city"] = "Rajkot" 
+if st.session_state.get("auto_lat") is None: st.session_state["auto_lat"] = 22.3039
+if st.session_state.get("auto_lon") is None: st.session_state["auto_lon"] = 70.8022
+if st.session_state.get("location_source") is None: st.session_state["location_source"] = "default"
 # This flag will be set to True if any modal is opened in this run.
 # This is to prevent the location permission dialog from opening at the same time.
 _modal_open_in_this_run = False
@@ -386,15 +507,15 @@ if "user_profile" not in st.session_state:
         "name": "",
         "email": "",
         "phone": "",
-        "city": "Ahmedabad",
+        "city": None,
         "notifications": {"weather": True, "mandi": False}
     }
 if 'show_profile_modal' not in st.session_state: st.session_state.show_profile_modal = False
 if 'show_settings_modal' not in st.session_state: st.session_state.show_settings_modal = False
 if 'show_logout_modal' not in st.session_state: st.session_state.show_logout_modal = False
-if 'dash_loc_perm' not in st.session_state: st.session_state.dash_loc_perm = None
+if 'dash_loc_perm' not in st.session_state: st.session_state.dash_loc_perm = True
 if 'manual_city_override' not in st.session_state: st.session_state.manual_city_override = False
-if 'manual_city_selection' not in st.session_state: st.session_state.manual_city_selection = "Ahmedabad"
+if 'manual_city_selection' not in st.session_state: st.session_state.manual_city_selection = None
 if 'show_login_modal' not in st.session_state: st.session_state.show_login_modal = False
 if 'show_signup_modal' not in st.session_state: st.session_state.show_signup_modal = False
 if 'show_forgot_password_modal' not in st.session_state: st.session_state.show_forgot_password_modal = False
@@ -411,77 +532,10 @@ def update_translations():
 
 update_translations()
 
-# ==========================================
-# AUTO-DETECT USER LOCATION (Before UI Render)
-# ==========================================
 
-# 1. Handle Browser GPS Params (Prioritized)
-browser_lat = st.query_params.get("browser_lat")
-browser_lon = st.query_params.get("browser_lon")
 
-if browser_lat and browser_lon:
-    try:
-        # Handle comma decimal separator
-        if isinstance(browser_lat, str): browser_lat = browser_lat.replace(',', '.')
-        if isinstance(browser_lon, str): browser_lon = browser_lon.replace(',', '.')
-            
-        lat = float(browser_lat)
-        lon = float(browser_lon)
-        
-        nearest_city = f"GPS @ {lat:.3f}, {lon:.3f}" # TEMPORARY DEBUG BYPASS
-        
-        # DEBUG: Confirm reception
-        st.toast(f"📍 GPS Found: {nearest_city} ({lat:.2f}, {lon:.2f})", icon="✅")
-        
-        # Update session state
-        st.session_state['auto_city'] = nearest_city
-        st.session_state['auto_lat'] = lat
-        st.session_state['auto_lon'] = lon
-        st.session_state['location_detected'] = True
-        st.session_state['location_source'] = 'browser'
-        st.session_state['location_locked'] = True  # <--- LOCK IT
-        st.caption(f"DEBUG GPS → lat={lat}, lon={lon}, city={nearest_city}, source=browser") # <--- DEBUG
-        
-        # Clear params to prevent reload loop
-        # Clear params to prevent reload loop
-        st.query_params.clear()
-        
-        # Force refresh data
-        st.session_state.live_data = None
-        st.rerun()
-    except Exception as e:
-        print(f"❌ GPS Error: {e}")
+# ALL DEFAULT FALLBACKS REMOVED (NUKE)
 
-# 2. IP Fallback (Refined logic)
-# 2. GPS BACKGROUND FETCHER (Replaces unreliable IP logic)
-# If we haven't locked a browser location yet, insert the script to fetch it
-if not st.session_state.get('location_locked'):
-    get_gps_component()
-
-def trigger_manual_gps():
-    # Only for button clicks
-    components.html(
-    """
-    <script>
-    navigator.geolocation.getCurrentPosition(
-        (pos) => {
-            const url = new URL(window.location.href);
-            url.searchParams.set('browser_lat', pos.coords.latitude);
-            url.searchParams.set('browser_lon', pos.coords.longitude);
-            window.location.href = url.toString();
-        }
-    );
-    </script>
-    """,
-    height=0, width=0
-    )
-
-# Use default ONLY if we haven't locked a real location
-if not st.session_state.get('location_locked'):
-    st.session_state.setdefault('auto_city', 'Ahmedabad')
-    st.session_state.setdefault('auto_lat', 23.0225)
-    st.session_state.setdefault('auto_lon', 72.5714)
-    st.session_state.setdefault('location_source', 'default')
 
 def get_live_data_for_city(city_name, lat=None, lon=None):
     try:
@@ -496,21 +550,19 @@ def get_live_data_for_city(city_name, lat=None, lon=None):
 # ==========================================
 
 def get_effective_city():
-    # 1. Manual Override (Settings) - Highest Priority
+    # 1. Manual Override
     if st.session_state.get("manual_city_override"):
-        return st.session_state.get("manual_city_selection", "Ahmedabad")
+        return st.session_state.get("manual_city_selection")
     
-    # 2. GPS / Browser / IP Detection - High Priority
-    # If the user successfully used GPS or IP was just found, this should override the profile default
-    if st.session_state.get("location_source") in ['browser', 'ip'] and st.session_state.get("auto_city"):
+    # 2. Locked GPS
+    if st.session_state.get("location_locked"):
         return st.session_state.get("auto_city")
 
-    # 3. Profile City (If logged in) - Medium Priority
-    if st.session_state.user_profile.get("authenticated"):
-        return st.session_state.user_profile.get("city", "Ahmedabad")
+    # 4. Fallback to Auto-Detected (even if not locked)
+    if st.session_state.get("auto_city"):
+        return st.session_state.get("auto_city")
     
-    # 4. IP/Default - Low Priority
-    return st.session_state.get("auto_city", "Ahmedabad")
+    return "Rajkot" # Fixed fallback
 
 selected_city = get_effective_city()
 
@@ -526,44 +578,7 @@ if not is_logged_in or not user_email:
     user_email = "guest"
     is_logged_in = False
 
-# JavaScript for GPS Button
-st.markdown("""
-<script>
-window.triggerGPS = function() {
-    if (!navigator.geolocation) {
-        alert('Geolocation is not supported by this browser.');
-        return;
-    }
-    
-    const btn = document.getElementById('gps_button');
-    if (btn) {
-        btn.innerHTML = '📡 Locating...';
-        btn.style.opacity = '0.7';
-    }
-    
-    navigator.geolocation.getCurrentPosition(
-        function(position) {
-            const lat = position.coords.latitude.toFixed(6);
-            const lon = position.coords.longitude.toFixed(6);
-            
-            // Reload page with coords in URL
-            const url = new URL(window.location.href);
-            url.searchParams.set('browser_lat', lat);
-            url.searchParams.set('browser_lon', lon);
-            window.location.href = url.toString();
-        },
-        function(error) {
-            let errorMsg = 'Unable to retrieve location.';
-            if (error.code === 1) errorMsg = 'Location permission denied. Please allow location access.';
-            
-            alert(errorMsg);
-            if (btn) btn.innerHTML = '📍 Use GPS';
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-};
-</script>
-""", unsafe_allow_html=True)
+# Manual GPS JS removed (NO button)
 
 # App Title Header & Profile
 col_brand, col_profile = st.columns([0.9, 0.1])
@@ -580,26 +595,9 @@ with col_brand:
     </div>
     """, unsafe_allow_html=True)
 
+# Debug info removed (NO extra flags)
+
 with col_profile:
-    # Always show current location - full width
-    current_city = st.session_state.get('auto_city', 'Ahmedabad')
-    loc_source = st.session_state.get('location_source', 'default')
-    
-    # Show current location with source icon - full width
-    source_icon = {
-        'browser': '🌐',
-        'ip': '📡',
-        'manual': '✏️',
-        'default': '📍'
-    }.get(loc_source, '📍')
-    
-    st.markdown(f"""
-    <div style="width: 100%; text-align: right; padding-right: 10px; cursor: pointer;" onclick="window.triggerGPS()">
-        <span style="color: #2ECC71; font-size: 1rem; font-weight: 600; white-space: nowrap;" title="Click to use GPS">
-            {source_icon} {selected_city}
-        </span>
-    </div>
-    """, unsafe_allow_html=True)
 
     # --- DYNAMIC PROFILE ICON HACK (THE NUCLEAR OPTION) ---
     if is_logged_in and st.session_state.user_profile.get("profile_pic"):
@@ -704,7 +702,7 @@ if st.session_state.get('show_city_selector', False):
     st.markdown("### 📍 Change Your Location")
     
     # Show current location
-    current_city = st.session_state.get('auto_city', 'Ahmedabad')
+    current_city = st.session_state.get('auto_city', 'Rajkot')
     st.info(f"📍 Current location: **{current_city}**")
     
     from data_utils import get_all_cities, get_gps_from_city
@@ -813,7 +811,7 @@ def profile_modal():
     phone = st.text_input(t.get("phone_number", "Phone Number"), value=profile.get("phone") or "")
     
     all_cities = get_all_cities()
-    current_city = profile.get("city", "Ahmedabad")
+    current_city = profile.get("city", "NOT_SET")
     try:
         city_idx = all_cities.index(current_city)
     except ValueError:
@@ -928,7 +926,7 @@ def settings_modal():
         if use_manual:
             # Temporary Override UI
             st.markdown("---")
-            curr = st.session_state.get("manual_city_selection", "Ahmedabad")
+            curr = st.session_state.get("manual_city_selection", 'NOT_SET')
             try: idx = all_cities.index(curr)
             except: idx = 0
             
@@ -941,7 +939,7 @@ def settings_modal():
             if st.session_state.user_profile.get("authenticated"):
                 st.markdown("---")
                 st.markdown("**Primary Farm Location** (Updates Profile)")
-                curr = st.session_state.user_profile.get("city", "Ahmedabad")
+                curr = st.session_state.user_profile.get("city", 'NOT_SET')
                 try: idx = all_cities.index(curr)
                 except: idx = 0
                 sel_city = st.selectbox("Profile City", all_cities, index=idx, key="prof_city_sel", label_visibility="collapsed")
@@ -997,7 +995,7 @@ def settings_modal():
             from utils.auth_db import update_user_profile
             prof = st.session_state.user_profile
             # Use the temp selected city from the dropdown above
-            new_city_val = st.session_state.get("temp_profile_city", prof.get("city", "Ahmedabad"))
+            new_city_val = st.session_state.get("temp_profile_city", prof.get("city", "NOT_SET"))
             
             # Update DB
             update_user_profile(prof["id"], prof["name"], prof["email"], prof.get("phone",""), new_city_val)
@@ -1047,7 +1045,7 @@ def login_modal():
                     "name": result["name"],
                     "email": result["email"],
                     "phone": result.get("phone") or "",
-                    "city": result.get("city") or "Ahmedabad",
+                    "city": result.get("city") or 'NOT_SET',
                     "notifications": {
                         "weather": bool(result.get("notif_weather", 1)),
                         "mandi": bool(result.get("notif_mandi", 0))
@@ -1146,7 +1144,7 @@ def signup_modal():
     password = st.text_input(t.get("password", "Password"), type="password")
     
     all_cities = get_all_cities()
-    auto_city = st.session_state.get('auto_city', "Ahmedabad")
+    auto_city = st.session_state.get('auto_city', 'Rajkot')
     try:
         city_idx = all_cities.index(auto_city)
     except ValueError:
@@ -1210,53 +1208,30 @@ elif st.session_state.get("show_reset_password_modal"):
 # Tabs moved to header for modern navigation
 
 with tab_dash:
-    # --- DASHBOARD PERMISSION LOGIC ---
-    if 'dash_loc_perm' not in st.session_state: st.session_state.dash_loc_perm = None
-    
-    @st.dialog(t.get("location_title", "📍 Access Live Dashboard?"))
-    def request_dashboard_permission():
-        st.markdown(f"""
-        <div style="text-align: center;">
-            <div style="font-size: 3rem;">{t.get('location_icon', '⛅')}</div>
-            <h3>{t.get('location_heading', 'See Local Insights?')}</h3>
-            <p style="color: #94A3B8; font-size: 0.9rem;">
-                {t.get('location_desc', 'Allow access to see live weather, soil, satellite, and market trends for your area.')}
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button(t.get("deny", "Deny"), use_container_width=True):
-                st.session_state.dash_loc_perm = False
-                st.rerun()
-        with c2:
-            if st.button(t.get("allow", "Allow"), type="primary", use_container_width=True):
-                st.session_state.dash_loc_perm = True
-                st.session_state.trigger_gps_automated = True
-                st.rerun()
-
-    if st.session_state.dash_loc_perm is None and not _modal_open_in_this_run:
-        request_dashboard_permission()
-
     # --- MAIN DASHBOARD CONTENT ---
-    is_active = st.session_state.dash_loc_perm is True
+    is_active = True # Force active
     
-# Header
-    st.markdown(f"### {t.get('live_weather_soil', '☁️ Live Weather & Soil Data')}")
-    
-    # Refresh Button
-    col_refresh, col_status = st.columns([0.1, 0.9])
-    with col_refresh:
-        if st.button("🔄", key="refresh_weather", help="Refresh weather data"):
-            st.session_state.live_data = None
-            st.rerun()
-    with col_status:
-        if is_active:
-            # Show debug info about location detection
-            if 'gps_coords_debug' in st.session_state:
-                st.caption(f"📍 {st.session_state['gps_coords_debug']} | Source: {st.session_state.get('location_source', 'unknown')}")
-        else:
-            st.caption(t.get('location_denied', '🚫 *Location Access Denied - Data Unavailable*'))
+    # Header
+    head_col, stat_col = st.columns([0.7, 0.3])
+    with head_col:
+        st.markdown(f"### {t.get('live_weather_soil', '☁️ Live Weather & Soil Data')}")
+    with stat_col:
+        # Subtle Location Status (Hidden in plain sight)
+        city_display = translate_dynamic(selected_city, st.session_state.language)
+        source = st.session_state.get('location_source', 'default')
+        src_icon = "🛰️" if source == 'browser' else "📡"
+        
+        # Get coordinates and station for verification
+        lat_v = st.session_state.get('auto_lat', '--')
+        lon_v = st.session_state.get('auto_lon', '--')
+        station = weather.get('api_source', 'Unknown')
+        
+        st.markdown(f"""
+            <div style="text-align: right; opacity: 0.6; font-size: 0.8rem; line-height: 1.2;">
+                <div>{src_icon} {city_display} | {datetime.datetime.now().strftime('%H:%M')}</div>
+                <div style="font-size: 0.7rem;">Coords: {lat_v:.4f}, {lon_v:.4f} | Source: {station}</div>
+            </div>
+        """, unsafe_allow_html=True)
 
     # Smart Alert Ticker - Localized
     if is_active and weather:
@@ -1318,13 +1293,14 @@ with tab_dash:
         with w_col4:
             ws_kmh = weather.get('wind_speed', '--')
             if is_active and weather and isinstance(ws_kmh, (int, float)):
-                val = f"{round(ws_kmh * 0.621371, 1)} mph"
+                val = f"{ws_kmh} km/h"
             else:
                 val = "--"
             st.markdown(f"""<div class="bento-card">
                 <div class="stat-label">{t.get('wind', 'Wind')}</div>
                 <div class="stat-val">{val}</div>
             </div>""", unsafe_allow_html=True)
+
 
     # Row 2: Live Soil Data
     # Row 2: Live Soil Data
@@ -1477,6 +1453,12 @@ with tab_diag:
                     # Reset previous results
                     if 'diagnosis' in st.session_state: del st.session_state['diagnosis']
                     if 'fusion_advice' in st.session_state: del st.session_state['fusion_advice']
+            else:
+                # If the uploader is empty, ensure the session state is also cleared
+                st.session_state.uploaded_image = None
+                st.session_state.last_uploaded_file_id = None
+                if 'diagnosis' in st.session_state: del st.session_state['diagnosis']
+                if 'fusion_advice' in st.session_state: del st.session_state['fusion_advice']
 
             # 2. IMAGE PREVIEW & BUTTON (Inside the same box)
             if st.session_state.get('uploaded_image'):
@@ -1685,44 +1667,40 @@ with tab_mandi:
     st.markdown(f"### {t.get('mandi_optimizer', '💰 Mandi Profit Optimizer')}")
     
     with st.container(border=True):
-        col_in1, col_in2, col_in3 = st.columns([1.5, 1, 1.2], vertical_alignment="bottom")
+        # 1. First Row: Smart Search
+        search_label = "🔍 શોધો (આપણી ભાષામાં લખો - દા.ત. Kapas, Gahu)" if st.session_state.language == 'gu' else "🔍 Smart Search (e.g. Kapas, Gahu)"
+        crop_search = st.text_input(search_label, placeholder="Type crop name here...", key="smart_search_input")
         
-        with col_in1:
-            # --- NEW SMART SEARCH BAR ---
-            search_label = "🔍 શોધો (આપણી ભાષામાં લખો - દા.ત. Kapas, Gahu)" if st.session_state.language == 'gu' else "🔍 Smart Search (e.g. Kapas, Gahu)"
-            crop_search = st.text_input(search_label, placeholder="Type crop name here...", key="smart_search_input")
-            
-            smart_match = get_smart_crop_match(crop_search)
-            
-            all_crops = get_all_crops()
-            
-            # Determine the default index based on smart search
-            default_idx = 0
-            if smart_match and smart_match in all_crops:
-                default_idx = all_crops.index(smart_match)
-                st.success(f"Matched: **{translate_dynamic(smart_match, st.session_state.language)}**")
-            elif "Groundnut (HPS)" in all_crops:
-                default_idx = all_crops.index("Groundnut (HPS)")
+        smart_match = get_smart_crop_match(crop_search)
+        all_crops = get_all_crops()
+        
+        # Determine the default index based on smart search
+        default_idx = 0
+        if smart_match and smart_match in all_crops:
+            default_idx = all_crops.index(smart_match)
+            st.toast(f"Matched: {translate_dynamic(smart_match, st.session_state.language)}", icon="🎯")
+        elif "Groundnut (HPS)" in all_crops:
+            default_idx = all_crops.index("Groundnut (HPS)")
 
-            # The actual selectbox (now synced with search)
+        # 2. Second Row: Core Inputs
+        co1, co2, co3 = st.columns(3)
+        with co1:
             crop = st.selectbox(t.get('select_crop', 'Select Crop'), 
                                all_crops, 
                                index=default_idx,
                                format_func=lambda x: translate_dynamic(x, st.session_state.language))
-        
-        with col_in2:
+        with co2:
             qty = st.number_input(t.get('quantity', 'Quantity (Quintals)'), min_value=1, max_value=1000, value=10)
-        
-        with col_in3:
-            # New Vehicle Dropdown
+        with co3:
             vehicle_name = st.selectbox("Transport Vehicle", options=list(VEHICLE_TYPES.keys()))
-            # Get the rate based on selection
             transport_rate = VEHICLE_TYPES[vehicle_name]
-            find_btn = st.button(t.get('find_best_mandi', '🔍 Find Best Price'), use_container_width=True)
+
+        # 3. Third Row: The Action Button
+        find_btn = st.button(t.get('find_best_mandi', '🔍 Find Best Price'), use_container_width=True, type="primary")
 
     if find_btn:
         # Strict Location Permission Check
-        if not st.session_state.get('dash_loc_perm'):
+        if False: # Always show or handle as needed
             st.warning(t.get('enable_location_mandi', "⚠️ Please enable location access in Profile or Overview tab to find real Mandi prices."))
         else:
             # Use live coords if available, else use default
@@ -1853,181 +1831,113 @@ with tab_chat:
     )
     
     # --- 1. Chat State Initialization ---
-    if 'chat_messages' not in st.session_state:
-        st.session_state.chat_messages = []
-    if 'current_chat_session_id' not in st.session_state:
-        st.session_state.current_chat_session_id = None
-    if 'chat_history_list' not in st.session_state:
-        st.session_state.chat_history_list = []
-    if 'show_chat_history' not in st.session_state:
-        st.session_state.show_chat_history = True
-    if 'temp_voice_prompt' not in st.session_state:
-        st.session_state.temp_voice_prompt = None
-    if 'last_processed_msg' not in st.session_state:
-        st.session_state.last_processed_msg = None
-    if 'voice_interaction' not in st.session_state:
-        st.session_state.voice_interaction = False
-    if 'pending_audio' not in st.session_state:
-        st.session_state.pending_audio = None
-    if 'chat_to_delete' not in st.session_state:
-        st.session_state.chat_to_delete = None
-    if 'chat_to_rename' not in st.session_state:
-        st.session_state.chat_to_rename = None
-    if 'guest_chat_history' not in st.session_state:
-        st.session_state.guest_chat_history = []
-    if 'guest_chat_id_counter' not in st.session_state:
-        st.session_state.guest_chat_id_counter = 0
+    if 'chat_messages' not in st.session_state: st.session_state.chat_messages = []
+    if 'current_chat_session_id' not in st.session_state: st.session_state.current_chat_session_id = None
+    if 'chat_history_list' not in st.session_state: st.session_state.chat_history_list = []
+    if 'pending_audio' not in st.session_state: st.session_state.pending_audio = None
+    if 'chat_to_delete' not in st.session_state: st.session_state.chat_to_delete = None
+    if 'last_processed_msg' not in st.session_state: st.session_state.last_processed_msg = None
+    if 'guest_chat_history' not in st.session_state: st.session_state.guest_chat_history = []
+    if 'guest_chat_id_counter' not in st.session_state: st.session_state.guest_chat_id_counter = 0
+    if 'voice_interaction' not in st.session_state: st.session_state.voice_interaction = False
+
+    # --- 2. CSS FIXES (The "Anti-Shift" Fix) ---
+    st.markdown("""
+    <style>
+    /* 1. FORCE AUDIO WIDGET LAYOUT LOCK */
+    [data-testid="stAudioInput"] {
+        background-color: rgba(255, 255, 255, 0.05) !important;
+        border-radius: 12px !important;
+        padding: 4px !important;
+        /* This prevents internal elements from jumping */
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        height: 50px !important; /* Force fixed height */
+        overflow: visible !important; /* Allow buttons to be seen */
+    }
     
+    /* 2. Target the internal buttons (Record & Delete) to stop them moving up */
+    [data-testid="stAudioInput"] button {
+        position: static !important; /* Disable relative/absolute shifts */
+        transform: none !important;  /* Disable Y-axis transforms */
+        margin: 0 !important;        /* Remove random margins */
+        display: inline-flex !important;
+        align-items: center !important;
+        height: 40px !important;
+    }
+
+    /* 3. Make the Delete Button RED, VISIBLE and SHIFTED DOWN */
+    [data-testid="stAudioInput"] button[kind="secondary"] {
+        color: #FF4B4B !important;
+        border: 1px solid #FF4B4B !important;
+        background-color: rgba(255, 75, 75, 0.1) !important;
+        opacity: 1 !important;
+        z-index: 99 !important; /* Force it on top */
+        transform: translateY(8px) !important; /* Shift it more down */
+    }
+    
+    [data-testid="stAudioInput"] button[kind="secondary"]:hover {
+        background-color: #FF4B4B !important;
+        color: white !important;
+    }
+
+    /* 4. Fix Text Input Alignment */
+    div[data-testid="stVerticalBlock"] button {
+        text-align: left;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # --- 3. CALLBACK: Handle Enter Key Press ---
+    def submit_text():
+        """Callback to handle text submission on Enter key"""
+        user_text = st.session_state.user_input_text_fixed
+        if user_text:
+            st.session_state.chat_messages.append({"role": "user", "content": user_text})
+            st.session_state.user_input_text_fixed = "" 
+            # Force voice interaction to False when user types
+            st.session_state.voice_interaction = False 
+
     # Check if user changed, clear history if so
-    if 'history_user_email' not in st.session_state:
-        st.session_state.history_user_email = None
-        
+    if 'history_user_email' not in st.session_state: st.session_state.history_user_email = None
     if st.session_state.history_user_email != user_email:
         st.session_state.chat_history_list = []
         st.session_state.history_user_email = user_email
         st.session_state.current_chat_session_id = None
         st.session_state.chat_messages = []
-        st.session_state.crop_history = []
-        st.session_state.guest_chat_history = []
     
     # Load chat history for user (only if logged in)
     if is_logged_in and not st.session_state.chat_history_list:
         st.session_state.chat_history_list = get_user_chat_sessions(user_email)
     
-    # Add CSS for chat history sidebar
-    st.markdown("""
-    <style>
-    /* Sidebar Styling using :has() Scope */
-    div:has(#sidebar-top) ~ div button {
-        background: transparent !important;
-        border: none !important;
-        text-align: left !important;
-        display: flex !important; 
-        width: 100% !important;
-        padding-left: 0 !important;
-        box-shadow: none !important;
-        color: #e2e8f0 !important;
-        justify-content: flex-start !important;
-    }
-    
-    div:has(#sidebar-top) ~ div button:hover {
-        background: rgba(255, 255, 255, 0.05) !important;
-        color: white !important;
-    }
-    
-    /* Hide ALL icons/arrows in sidebar buttons (including popover chevron) */
-    div:has(#sidebar-top) ~ div button svg,
-    div:has(#sidebar-top) ~ div button::after {
-        display: none !important;
-        content: none !important;
-    }
-    
-    div:has(#sidebar-top) ~ div button p {
-        text-align: left !important;
-        width: 100%;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        font-weight: 400 !important;
-    }
-    
-    .chat-date-group {
-        color: #94A3B8;
-        font-size: 0.75rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        margin: 16px 0 8px 0;
-    }
-    
-    .chat-title {
-        color: #F8FAFC;
-        font-size: 0.9rem;
-        margin-bottom: 4px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-    
-    .chat-meta {
-        color: #64748B;
-        font-size: 0.75rem;
-    }
-    
-    .new-chat-btn {
-        background: linear-gradient(135deg, #2ECC71, #27AE60);
-        color: white;
-        border: none;
-        border-radius: 10px;
-        padding: 12px;
-        width: 100%;
-        font-weight: 600;
-        cursor: pointer;
-        margin-bottom: 16px;
-        transition: all 0.3s ease;
-    }
-    
-    .new-chat-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(46, 204, 113, 0.3);
-    }
-    
-    .chat-actions {
-        display: flex;
-        gap: 8px;
-        margin-top: 8px;
-    }
-    
-    .chat-action-btn {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 6px;
-        padding: 4px 8px;
-        font-size: 0.7rem;
-        color: #94A3B8;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-    
-    .chat-action-btn:hover {
-        background: rgba(255, 255, 255, 0.1);
-        color: #F8FAFC;
-    }
-    
-    .delete-btn:hover {
-        background: rgba(231, 76, 60, 0.2);
-        border-color: #E74C3C;
-        color: #E74C3C;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # 1. SIDE-BY-SIDE LAYOUT
+    # --- LAYOUT: HISTORY VS CHAT ---
     chat_col, hist_col = st.columns([3, 1])
 
     # --- RIGHT COLUMN: CHAT HISTORY LIST ---
     with hist_col:
         st.markdown(f"#### 📜 {t.get('chat_history', 'History')}")
-        
-       
-            
         st.markdown('<div style="height: 400px; overflow-y: auto; padding-right: 5px;">', unsafe_allow_html=True)
         
-        # Group chats (User logic)
         sessions = st.session_state.chat_history_list if is_logged_in else st.session_state.guest_chat_history
         if sessions:
-            for s in sessions[:10]: # Show last 10 chats
+            for s in sessions[:10]:
                 title = s.get('title', 'Chat')
                 s_id = s.get('id')
-                if st.button(f"💬 {title[:20]}...", key=f"hist_{s_id}", use_container_width=True):
-                    # Load logic
-                    if is_logged_in:
-                        messages = get_chat_messages(s_id)
-                        st.session_state.chat_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
-                    else:
-                        st.session_state.chat_messages = s.get('messages', [])
-                    st.session_state.current_chat_session_id = s_id
-                    st.rerun()
+                hc1, hc2 = st.columns([0.8, 0.2])
+                with hc1:
+                    if st.button(f"💬 {title[:15]}..", key=f"hist_{s_id}", use_container_width=True):
+                        if is_logged_in:
+                            messages = get_chat_messages(s_id)
+                            st.session_state.chat_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
+                        else:
+                            st.session_state.chat_messages = s.get('messages', [])
+                        st.session_state.current_chat_session_id = s_id
+                        st.rerun()
+                with hc2:
+                    if st.button("🗑️", key=f"del_btn_{s_id}", help="Delete Chat"):
+                        st.session_state.chat_to_delete = s_id
+                        st.rerun()
         else:
             st.caption("No past chats" if is_logged_in else "Login to save chats")
         st.markdown('</div>', unsafe_allow_html=True)
@@ -2035,193 +1945,112 @@ with tab_chat:
     # --- LEFT COLUMN: ACTIVE CHAT ---
     with chat_col:
         with st.container(border=True):
-            # Header with New Chat functionality
-            c_head_1, c_head_2 = st.columns([0.94, 0.06])
+            # Header
+            c_head_1, c_head_2 = st.columns([0.9, 0.1])
             with c_head_1:
-                 # Placeholder or simple title could go here if needed, or just kept empty for spacing
-                 st.markdown(f'<div style="margin-top: -8px; color: #94A3B8; font-size: 0.8rem;">{t.get("chat_interface", "AI Farming Assistant")}</div>', unsafe_allow_html=True)
+                 st.markdown(f'<div style="margin-top: -5px; color: #94A3B8; font-size: 0.9rem;">{t.get("chat_interface", "AI Farming Assistant")}</div>', unsafe_allow_html=True)
             with c_head_2:
-                # New Chat Button
                 if st.button("➕", key="new_chat_btn_main", help=t.get('new_chat', 'New Chat')):
-                    # For guests, archive the current chat before starting a new one
                     if not is_logged_in and st.session_state.chat_messages:
                         first_user_msg = next((msg['content'] for msg in st.session_state.chat_messages if msg['role'] == 'user'), None)
                         if first_user_msg:
                             title = generate_title_from_message(first_user_msg, st.session_state.language)
-                            st.session_state.guest_chat_history.insert(0, {
-                                'id': f"guest_{st.session_state.guest_chat_id_counter}",
-                                'title': title,
-                                'messages': st.session_state.chat_messages.copy()
-                            })
+                            st.session_state.guest_chat_history.insert(0, {'id': f"guest_{st.session_state.guest_chat_id_counter}", 'title': title, 'messages': st.session_state.chat_messages.copy()})
                             st.session_state.guest_chat_id_counter += 1
-
                     st.session_state.chat_messages = []
                     st.session_state.current_chat_session_id = None
                     st.session_state.last_processed_msg = None
                     st.rerun()
             
-            # Custom CSS for the chat container and inputs
-            st.markdown("""
-            <style>
-            .stChatInput {
-                display: none;
-            }
-            div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
-                gap: 0.5rem;
-            }
-            /* Style for the text input to look like chat input */
-            div[data-testid="stTextInput"] input {
-                border-radius: 20px;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-
-            # Create a container for chat messages with fixed height (Superlist Style)
+            # Chat Container
             chat_container = st.container(height=400)
-            
-            # Display chat messages inside the container
             with chat_container:
+                if not st.session_state.chat_messages:
+                    st.info("👋 Hi! I am Krishi-Mitra. Ask me about crops, weather, or mandi prices.")
                 for msg in st.session_state.chat_messages:
                     with st.chat_message(msg["role"]):
                         st.markdown(msg["content"])
-                
-                # Render pending audio for autoplay inside the container so it's associated with the flow
                 if st.session_state.pending_audio:
                     if len(st.session_state.pending_audio) > 1000:
                         st.audio(st.session_state.pending_audio, autoplay=True)
-                        st.toast("Audio response ready", icon="📢")
                     st.session_state.pending_audio = None
 
-            # --- THE CUSTOM INPUT BAR (Fixed Logic) ---
+            # --- INPUT AREA (Fixed Alignment) ---
             input_area = st.container()
             with input_area:
-                # Custom CSS to ensure columns don't break the mic alignment
-                st.markdown("""
-                    <style>
-                        /* Fixed width for the input group when inside columns */
-                        .stTextInput, .stAudioInput { width: 100% !important; }
-                    </style>
-                """, unsafe_allow_html=True)
+                st.markdown("""<style>.stTextInput { width: 100% !important; }</style>""", unsafe_allow_html=True)
                 
-                input_c1, input_c2 = st.columns([0.85, 0.15])
+                # vertical_alignment="bottom" ensures the mic button sits on the same baseline as the text box
+                input_c1, input_c2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
                 
                 with input_c1:
-                    # Text Input
-                    user_text = st.text_input("Message", 
-                                            placeholder=t.get('ask_ai', 'Ask me anything about farming...'), 
-                                            label_visibility="collapsed", 
-                                            key="user_input_text_fixed")
+                    st.text_input(
+                        "Message", 
+                        placeholder=t.get('ask_ai', 'Type here and press Enter...'), 
+                        label_visibility="collapsed", 
+                        key="user_input_text_fixed",
+                        on_change=submit_text 
+                    )
                 
                 with input_c2:
-                    # Microphone Input
+                    # Give audio input more width (0.2 instead of 0.15)
                     audio_result = st.audio_input("Voice", label_visibility="collapsed", key="mic_fixed")
 
-            # --- LOGIC: Process Input ---
-            if user_text and user_text != st.session_state.get('last_msg'):
-                st.session_state.last_msg = user_text
-                st.session_state.chat_messages.append({"role": "user", "content": user_text})
-                # Trigger AI logic 
-                st.rerun()
-
-            # AI Response Logic (Check if last message was user)
-            if (st.session_state.chat_messages and 
-                st.session_state.chat_messages[-1]["role"] == "user"):
-                
-                curr_sig = f"{len(st.session_state.chat_messages)}_{st.session_state.chat_messages[-1]['content'][:20]}"
-                if curr_sig != st.session_state.last_processed_msg:
-                    st.session_state.last_processed_msg = curr_sig
-                    
-                    user_msg = st.session_state.chat_messages[-1]["content"]
-                    
-                    # Create new session if this is the first message
-                    if is_logged_in and st.session_state.current_chat_session_id is None:
-                        user_id = st.session_state.user_profile.get("id")
-                        session_id = create_chat_session(user_email, user_msg, st.session_state.language, user_id)
-                        st.session_state.current_chat_session_id = session_id
-                        # Refresh chat history list
-                        st.session_state.chat_history_list = get_user_chat_sessions(user_email)
-                    
-                    # Save user message to database
-                    if is_logged_in and st.session_state.current_chat_session_id:
-                        save_message(st.session_state.current_chat_session_id, "user", user_msg)
-                    
-                    with chat_container: # Display thinking inside the container
-                        with st.chat_message("assistant"):
-                            with st.spinner(t.get('krishi_thinking', 'Thinking...')):
-                                weather = get_live_weather(coords["lat"], coords["lon"]) if coords else {"temp": 30}
-                                
-                            # Close the Context Loop
-                                target_crop = st.session_state.get('guest_crop', 'Groundnut (HPS)')
-                                if is_logged_in:
-                                    target_crop = st.session_state.user_profile.get("preferred_crop", "Groundnut (HPS)")
-
-                                context = {
-                                    "city": selected_city if 'selected_city' in locals() else st.session_state.user_profile.get("city", "Ahmedabad"),
-                                    "crop": target_crop,
-                                    "temp": weather.get("temp", 30),
-                                    "crop_history": st.session_state.crop_history
-                                }
-                                
-                                if is_logged_in:
-                                    user_farm = get_farm(st.session_state.user_profile['id'])
-                                    active_crops = get_user_crops(st.session_state.user_profile['id'])
-                                    crop_list = ", ".join([c['crop_name'] for c in active_crops]) if active_crops else "None registered"
-                                    
-                                    context.update({
-                                        "crop": crop_list,
-                                        "user_farm": user_farm
-                                    })
-
-                                reply = chat_with_krishi_mitra(user_msg, st.session_state.language, context)
-                                st.write(reply)
-                                
-                                # Store audio for next render to ensure autoplay works
-                                if st.session_state.get('voice_interaction'):
-                                    from bhashini_layer import text_to_speech
-                                    audio_bytes = text_to_speech(reply, st.session_state.language)
-                                    if audio_bytes:
-                                        st.session_state.pending_audio = audio_bytes
-                    
-                    st.session_state.chat_messages.append({"role": "assistant", "content": reply})
-                    
-                    # Save assistant message to database
-                    if is_logged_in and st.session_state.current_chat_session_id:
-                        save_message(st.session_state.current_chat_session_id, "assistant", reply)
-                    
-                    st.session_state.voice_interaction = False # Reset flag
-                    st.rerun()
-
-            # Process audio transcription
+            # --- PROCESSING LOGIC ---
             if audio_result:
-                # Use the button data/name as a unique identifier to prevent re-processing
                 audio_id = f"audio_{audio_result.size}_{audio_result.name}"
-                
                 if st.session_state.get('last_processed_audio_id') != audio_id:
                     with chat_container:
                         with st.spinner("🎙️ Transcribing..."):
                             try:
                                 audio_bytes = audio_result.getvalue()
                                 transcribed_text = transcribe_audio(audio_bytes, st.session_state.language)
-                                
                                 if transcribed_text and not transcribed_text.startswith("Error"):
                                     st.session_state.chat_messages.append({"role": "user", "content": transcribed_text.strip()})
                                     st.session_state.voice_interaction = True
-                                    # Mark this specific audio file as processed
                                     st.session_state.last_processed_audio_id = audio_id
                                     st.rerun()
-                                elif transcribed_text.startswith("Error"):
-                                    st.error(transcribed_text)
-                                else:
-                                    st.warning("Could not understand audio.")
-                            except Exception as e:
-                                st.error(f"Error: {e}")
+                                elif transcribed_text.startswith("Error"): st.error(transcribed_text)
+                            except Exception as e: st.error(f"Error: {e}")
 
+            if st.session_state.chat_messages and st.session_state.chat_messages[-1]["role"] == "user":
+                curr_sig = f"{len(st.session_state.chat_messages)}_{st.session_state.chat_messages[-1]['content'][:20]}"
+                if curr_sig != st.session_state.last_processed_msg:
+                    st.session_state.last_processed_msg = curr_sig
+                    user_msg = st.session_state.chat_messages[-1]["content"]
+                    
+                    if is_logged_in and st.session_state.current_chat_session_id is None:
+                        user_id = st.session_state.user_profile.get("id")
+                        session_id = create_chat_session(user_email, user_msg, st.session_state.language, user_id)
+                        st.session_state.current_chat_session_id = session_id
+                        st.session_state.chat_history_list = get_user_chat_sessions(user_email)
+                    if is_logged_in and st.session_state.current_chat_session_id:
+                        save_message(st.session_state.current_chat_session_id, "user", user_msg)
+                    
+                    with chat_container:
+                        with st.chat_message("assistant"):
+                            st.markdown(f'<span style="color:#9CA3AF; font-size:0.8rem;">{t.get("ai_typing", "Krishi-Mitra is thinking...")}</span>', unsafe_allow_html=True)
+                            with st.spinner(""):
+                                target_crop = st.session_state.user_profile.get("preferred_crop", "Groundnut") if is_logged_in else "Groundnut"
+                                context = {"city": selected_city, "crop": target_crop, "temp": 30, "crop_history": st.session_state.get('crop_history', [])}
+                                reply = chat_with_krishi_mitra(user_msg, st.session_state.language, context)
+                                st.write(reply)
+                                if st.session_state.get('voice_interaction'):
+                                    from bhashini_layer import text_to_speech
+                                    audio_bytes = text_to_speech(reply, st.session_state.language)
+                                    if audio_bytes: st.session_state.pending_audio = audio_bytes
+                    
+                    st.session_state.chat_messages.append({"role": "assistant", "content": reply})
+                    if is_logged_in and st.session_state.current_chat_session_id:
+                        save_message(st.session_state.current_chat_session_id, "assistant", reply)
+                    st.session_state.voice_interaction = False
+                    st.rerun()
 
-    # --- Delete Confirmation Dialog (Moved to end to prevent layout issues) ---
+    # --- DELETE CONFIRMATION ---
     if st.session_state.get('chat_to_delete'):
         @st.dialog(t.get("delete_chat_confirm", "Delete Chat?"))
         def confirm_delete():
-            st.write(t.get("delete_chat_warning", "Are you sure you want to delete this chat? This action cannot be undone."))
+            st.write(t.get("delete_chat_warning", "This action cannot be undone."))
             col1, col2 = st.columns(2)
             with col1:
                 if st.button(t.get("cancel", "Cancel"), use_container_width=True):
@@ -2229,17 +2058,16 @@ with tab_chat:
                     st.rerun()
             with col2:
                 if st.button(t.get("delete", "Delete"), type="primary", use_container_width=True):
-                    delete_chat_session(st.session_state.chat_to_delete)
-                    # Refresh chat history
-                    st.session_state.chat_history_list = get_user_chat_sessions(user_email)
-                    # Clear current chat if it was deleted
+                    if is_logged_in:
+                        delete_chat_session(st.session_state.chat_to_delete)
+                        st.session_state.chat_history_list = get_user_chat_sessions(user_email)
+                    else: st.session_state.guest_chat_history = [c for c in st.session_state.guest_chat_history if c['id'] != st.session_state.chat_to_delete]
                     if st.session_state.current_chat_session_id == st.session_state.chat_to_delete:
                         st.session_state.chat_messages = []
                         st.session_state.current_chat_session_id = None
                     st.session_state.chat_to_delete = None
                     st.toast(t.get("chat_deleted", "Chat deleted"), icon="🗑️")
                     st.rerun()
-        
         confirm_delete()
 
 
@@ -2272,7 +2100,7 @@ with tab_farm:
             f_size = user_farm_profile.get('size', 0.0) if user_farm_profile else 0.0
             
             # Gather live data for PDF if permission given
-            live_pdf = st.session_state.get('live_data') if st.session_state.get('dash_loc_perm') else None
+            live_pdf = st.session_state.get('live_data')
             
             try:
                 report_bytes = generate_farm_report(u_name, u_email, f_city, f_size, active_crops, live_pdf)
@@ -2574,7 +2402,7 @@ with tab_farm:
 
                     # 3. Micro-Climate
                     with m_col3:
-                        if st.session_state.get('dash_loc_perm', False):
+                        if True:
                             live = st.session_state.get('live_data')
                             temp = f"{live['weather']['temp']}°C" if live else "32°C"
                             hum = f"{live['weather']['humidity']}%" if live else "45%"

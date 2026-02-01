@@ -168,15 +168,13 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, stored_hash: str) -> bool:
     """
-    Verify password against stored hash.
+    Smart Verification: Detects if the hash is bcrypt or fallback SHA256.
+    Ensures login works even if the hashing method changed in the environment.
     """
     if not stored_hash: return False
-    if USE_BCRYPT:
-        try:
-            return bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8'))
-        except Exception:
-            return False
-    else:
+    
+    # 1. Detect if it's a fallback hash (contains a colon)
+    if ":" in stored_hash:
         try:
             salt, stored_password_hash = stored_hash.split(":")
             combined = salt + password
@@ -184,6 +182,16 @@ def verify_password(password: str, stored_hash: str) -> bool:
             return stored_password_hash == computed_hash
         except Exception:
             return False
+            
+    # 2. Otherwise, treat it as a bcrypt hash
+    # (Only try bcrypt if it is actually installed)
+    try:
+        import bcrypt
+        return bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8'))
+    except (ImportError, Exception):
+        # If bcrypt hash exists but library missing during verification
+        # or if it's not a valid bcrypt hash, return False
+        return False
 
 
 def get_db_connection():
@@ -361,10 +369,11 @@ def delete_otp(email: str) -> bool:
 
 def login_user(email: str, password: str) -> tuple:
     try:
+        email = email.strip().lower() # Standardize email
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=extras.DictCursor)
         
-        cursor.execute("SELECT * FROM users WHERE email = %s", (email.lower(),))
+        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
         user = cursor.fetchone()
         conn.close()
         
@@ -384,10 +393,11 @@ def register_user(name: str, email: str, password: str, phone: str = "", city: s
         return False, "Password is too common."
     
     try:
+        email = email.strip().lower() # Standardize email
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute("SELECT id FROM users WHERE email = %s", (email.lower(),))
+        cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
         if cursor.fetchone():
             conn.close()
             return False, "Email already registered!"
