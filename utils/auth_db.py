@@ -220,9 +220,18 @@ def init_db():
             birthdate TEXT,
             photo BYTEA,
             profile_pic TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            language TEXT DEFAULT 'en',
+            preferred_crop TEXT DEFAULT 'Groundnut'
         )
     ''')
+
+    # Migration: Add new columns if they don't exist (for existing DBs)
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS language TEXT DEFAULT 'en'")
+        cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_crop TEXT DEFAULT 'Groundnut'")
+    except Exception as e:
+        print(f"Migration Note: {e}")
     
     # Create password reset OTPs table
     cursor.execute('''
@@ -240,6 +249,21 @@ def init_db():
     conn.commit()
     cursor.close()
     conn.close()
+
+
+def update_user_preferences(user_id, language, preferred_crop):
+    """Update user's persistent language and crop settings."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET language=%s, preferred_crop=%s WHERE id=%s", 
+                      (language, preferred_crop, user_id))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error updating preferences: {e}")
+        return False
 
 
 # ============================================================

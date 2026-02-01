@@ -26,7 +26,7 @@ from data_utils import (
     get_crops_by_category, get_nearest_city, # <--- ENSURE THIS IS IMPORTED FROM data_utils
     GUJARAT_CITIES, GUJARAT_CROPS, VEHICLE_TYPES
 )
-from utils.auth_db import login_user, register_user, update_password, generate_otp, verify_otp, check_email_exists, update_user_notifications
+from utils.auth_db import login_user, register_user, update_password, generate_otp, verify_otp, check_email_exists, update_user_notifications, update_user_preferences
 from utils.farm_db import init_farm_db, get_farm, save_farm, save_history_record, get_history_records, get_user_crops, save_user_crop, delete_user_crop
 from utils.email_utils import send_otp_email, send_alert_notification
 from utils.sms_utils import send_sms_otp
@@ -99,7 +99,13 @@ def init_gps_from_component():
         st.rerun()
 
 # RUN THE LOGIC
-init_gps_from_component()
+# RUN THE LOGIC - Optimization: Skip GPS check if keeping a modal open is the priority
+# This prevents the "GPS lag" when trying to just open the Login/Signup page
+if not (st.session_state.get("show_login_modal") or 
+        st.session_state.get("show_signup_modal") or 
+        st.session_state.get("show_profile_modal") or
+        st.session_state.get("show_settings_modal")):
+    init_gps_from_component()
 
 def apply_modern_theme():
     st.markdown('<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">', unsafe_allow_html=True)
@@ -1041,6 +1047,14 @@ def settings_modal():
             # Reset Data to fetch for new city
             st.session_state.live_data = None
             
+        # 4. Update Preferences (Language & Crop) in DB
+        if st.session_state.user_profile.get("authenticated"):
+            update_user_preferences(
+                st.session_state.user_profile["id"], 
+                st.session_state.language, 
+                new_crop
+            )
+            
         st.toast("Settings Saved!", icon="✅")
         st.session_state.show_settings_modal = False
         st.rerun()
@@ -1088,8 +1102,15 @@ def login_modal():
                         "mandi": bool(result.get("notif_mandi", 0))
                     },
                     "profile_pic": result.get("profile_pic"),
-                    "id": result["id"]
+                    "id": result["id"],
+                    "preferred_crop": result.get("preferred_crop", "Groundnut")
                 })
+                
+                # Apply User Preferences immediately
+                if result.get("language"):
+                    st.session_state.language = result.get("language")
+                    update_translations() # Refresh UI text
+                
                 st.toast(f"Welcome back, {result['name']}!", icon="👋")
                 st.rerun()
             else:
