@@ -562,15 +562,10 @@ def get_city_from_nominatim(lat, lon):
 
 def get_nearest_city(lat, lon):
     """Find the nearest city to given coordinates"""
-    # 1. Try Positionstack (fastest if key exists)
-    real_name = get_city_from_positionstack(lat, lon)
-    if real_name: return real_name
-
-    # 2. Try Nominatim (Free, Accurate, Global)
-    real_name_osm = get_city_from_nominatim(lat, lon)
-    if real_name_osm: return real_name_osm
-
-    # 3. Fallback to local dictionary (Gujarat Only)
+    
+    # 1. PRIORITY: Snap to known major hubs first (Stability)
+    # If user is within 25km of a major city (e.g. Ahmedabad), call it "Ahmedabad"
+    # instead of "Vatva" or "Sabarmati" (which causes jitter).
     nearest = None
     min_dist = float('inf')
     distances = []
@@ -581,6 +576,20 @@ def get_nearest_city(lat, lon):
         if dist < min_dist:
             min_dist = dist
             nearest = city
+            
+    # If very close to a major hub, return that hub immediately
+    if min_dist < 10:
+        return nearest
+
+    # 2. Try Positionstack (fastest if key exists)
+    real_name = get_city_from_positionstack(lat, lon)
+    if real_name: return real_name
+
+    # 3. Try Nominatim (Free, Accurate, Global)
+    real_name_osm = get_city_from_nominatim(lat, lon)
+    if real_name_osm: return real_name_osm
+
+    # 4. Fallback to nearest major city (even if far, but show coords if VERY far)
     
     # Debug: Show top 5 nearest cities
     distances.sort(key=lambda x: x[1])
