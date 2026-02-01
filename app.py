@@ -1415,7 +1415,7 @@ with tab_dash:
     
     if is_active:
         # --- SATELLITE SECTION ---
-        head_col, zoom_col, pin_col = st.columns([0.6, 0.25, 0.15])
+        head_col, zoom_col = st.columns([0.7, 0.3])
         
         with head_col:
             st.markdown(f"### {t.get('satellite_view', '🛰️ Aerial Satellite View')}")
@@ -1446,6 +1446,14 @@ with tab_dash:
                 attr='Google',
                 scrollWheelZoom=False
             )
+            
+            # 2. Add Native Fullscreen Button (The Real "Whole Screen" Solution)
+            plugins.Fullscreen(
+                position='topright',
+                title='Expand to Full Screen',
+                title_cancel='Exit Full Screen',
+                force_separate_button=True
+            ).add_to(m)
             
             # 📍 Exact current location marker (Session State Backup)
             if st.session_state.get("force_pin"):
@@ -1594,7 +1602,7 @@ with tab_dash:
             folium.LayerControl().add_to(m)
 
             # Render the map with st_folium
-            st_folium(m, height=450, width="100%", key="satellite_map_dashboard", returned_objects=[])
+            map_data = st_folium(m, height=500, width="100%", key="dashboard_map_main")
 
             # --- LIVE LOCATION HUD REMOVED AS REQUESTED ---
 
