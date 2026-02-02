@@ -26,7 +26,7 @@ from data_utils import (
     get_crops_by_category, get_nearest_city, # <--- ENSURE THIS IS IMPORTED FROM data_utils
     GUJARAT_CITIES, GUJARAT_CROPS, VEHICLE_TYPES
 )
-from utils.auth_db import login_user, register_user, update_password, generate_otp, verify_otp, check_email_exists, update_user_notifications, update_user_preferences
+from utils.auth_db import login_user, register_user, update_password, generate_otp, verify_otp, check_email_exists, update_user_notifications, update_user_preferences, update_user_profile
 from utils.farm_db import init_farm_db, get_farm, save_farm, save_history_record, get_history_records, get_user_crops, save_user_crop, delete_user_crop
 from utils.email_utils import send_otp_email, send_alert_notification
 from utils.sms_utils import send_sms_otp
@@ -2409,55 +2409,31 @@ with tab_farm:
                     st.rerun()
 
         # --- 3. Current Crop Status Header ---
-        title_col1, title_col2 = st.columns([0.85, 0.15])
-        with title_col1:
-             st.markdown(f"### <span style='font-size:1.2rem;'>🌱 {t.get('current_crop_status', 'Current Crop Status')}</span>", unsafe_allow_html=True)
-        with title_col2:
+        title_col, btn_container = st.columns([0.5, 0.5])
+        with title_col:
+             st.markdown(f"<h3 style='margin:0; padding:0;'><span style='font-size:1.2rem;'>🌱 {t.get('current_crop_status', 'Current Crop Status')}</span></h3>", unsafe_allow_html=True)
+        
+        with btn_container:
             show_form = st.session_state.get('show_add_crop_form', False)
             if not show_form:
-                # Custom minimal text-only button style
-                st.markdown("""
-                <style>
-                div[data-testid="stColumn"] button[kind="secondary"] {
-                    background: transparent !important;
-                    border: none !important;
-                    color: #2ECC71 !important;
-                    box-shadow: none !important;
-                    font-weight: 600 !important;
-                    text-align: right !important;
-                    padding-right: 0 !important;
-                }
-                div[data-testid="stColumn"] button[kind="secondary"]:hover {
-                    color: #27AE60 !important;
-                    text-decoration: underline !important;
-                }
-                </style>
-                """, unsafe_allow_html=True)
-                
-                # PDF Export Button (Above Add)
-                try:
-                    pdf_data = generate_farm_report(
-                        u_name, u_email, f_city, f_size, active_crops, 
-                        st.session_state.get('live_data'), 
-                        st.session_state.language, 
-                        t
-                    )
-                    st.download_button(
-                        label="📄 PDF",
-                        data=pdf_data,
-                        file_name=f"Farm_Report_{datetime.datetime.now().strftime('%Y%m%d')}.pdf",
-                        mime="application/pdf",
-                        key="btn_download_farm_pdf_main",
-                        use_container_width=True
-                    )
-                except Exception as e:
-                    # In case of error (e.g. font missing), we just pass or show nothing to avoid breaking UI
-                    pass 
-                
-                if st.button(t.get('add', 'Add'), key="register_toggle_btn", use_container_width=True, type="secondary"):
-                    st.session_state.show_add_crop_form = True
-                    if 'editing_crop_id' in st.session_state: del st.session_state['editing_crop_id']
-                    st.rerun()
+                b1, b2 = st.columns([0.7, 0.3])
+                with b1:
+                    try:
+                        pdf_data = generate_farm_report(u_name, u_email, f_city, f_size, active_crops, st.session_state.get('live_data'), st.session_state.language, t)
+                        st.download_button(
+                            label=f"📄 {t.get('download_pdf', 'Download PDF')}",
+                            data=pdf_data,
+                            file_name=f"Farm_Report_{datetime.datetime.now().strftime('%Y%m%d')}.pdf",
+                            mime="application/pdf",
+                            key="btn_download_farm_pdf_main",
+                            use_container_width=True
+                        )
+                    except Exception: pass
+                with b2:
+                    if st.button(t.get('add', 'Add'), key="register_toggle_btn", use_container_width=True, type="secondary"):
+                        st.session_state.show_add_crop_form = True
+                        if 'editing_crop_id' in st.session_state: del st.session_state['editing_crop_id']
+                        st.rerun()
 
         # --- Add/Edit Crop Form with Map Picker ---
         if st.session_state.get('show_add_crop_form'):
@@ -2673,7 +2649,7 @@ with tab_farm:
                                 st.session_state.show_add_crop_form = False
                                 st.rerun()
             if active_crops:
-                st.divider()
+                st.markdown("<div style='margin-bottom: -20px;'></div>", unsafe_allow_html=True)
         elif not active_crops:
             # Show a call to action if no crops and form is hidden
             st.info(t.get('no_crops_added', 'Register your crop details to start real-time AI monitoring.'))
