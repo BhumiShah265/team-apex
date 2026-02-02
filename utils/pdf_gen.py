@@ -1,222 +1,289 @@
-from fpdf import FPDF
-import datetime
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, Frame, PageTemplate
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.units import inch, mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.graphics.shapes import Drawing, Rect
+from reportlab.graphics import renderPDF
+from reportlab.pdfgen import canvas
 import os
+import datetime
 from io import BytesIO
 
-class FarmReport(FPDF):
-    def __init__(self, lang_code='en', *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.lang_code = lang_code
-        self.font_reg = os.path.join(os.path.dirname(__file__), 'NotoSansGujarati-Regular.ttf')
-        self.font_bold = os.path.join(os.path.dirname(__file__), 'NotoSansGujarati-Bold.ttf')
-        self.use_custom_font = False
-        
-        # Add Gujarati font if it exists
-        try:
-            if os.path.exists(self.font_reg):
-                self.add_font('Gujarati', '', self.font_reg)
-                self.add_font('Gujarati', 'I', self.font_reg)
-                if os.path.exists(self.font_bold):
-                    self.add_font('Gujarati', 'B', self.font_bold)
-                    self.add_font('Gujarati', 'BI', self.font_bold)
-                else:
-                    self.add_font('Gujarati', 'B', self.font_reg)
-                self.custom_font = 'Gujarati'
-                self.use_custom_font = True
-            else:
-                self.custom_font = 'Arial'
-        except Exception as e:
-            print(f"Font loading error: {e}")
-            self.custom_font = 'Arial'
-            self.use_custom_font = False
+# --- 1. FONTS & ASSETS CONFIGURATION ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FONT_REGULAR = os.path.join(BASE_DIR, "NotoSansGujarati-Regular.ttf")
+FONT_BOLD = os.path.join(BASE_DIR, "NotoSansGujarati-Bold.ttf")
 
-    def header(self):
-        # Set font
-        font_to_use = self.custom_font if (self.lang_code == 'gu' and self.use_custom_font) else 'Arial'
-        self.set_font(font_to_use, 'B', 15)
-        
-        # Title
-        title = 'Krishi-Mitra AI: Farm Status Report'
-        if self.lang_code == 'gu' and self.use_custom_font:
-            title = 'કૃષિ-મિત્ર AI: ખેતર સ્થિતિ રિપોર્ટ'
-            
-        # Clean title if using Arial
-        if font_to_use == 'Arial':
-            title = title.encode('latin-1', 'replace').decode('latin-1')
-            
-        self.cell(0, 10, title, 0, 1, 'C')
-        self.ln(5)
+# THEME COLORS
+# Green: #2ECC71 (46, 204, 113)
+# Dark BG: #08090A (8, 9, 10)
+# Dark Card: #1F2937 (31, 41, 55)
+COLOR_PRIMARY = colors.HexColor('#2ECC71')
+COLOR_PRIMARY_DARK = colors.HexColor('#27AE60')
+COLOR_ACCENT_BG = colors.HexColor('#E8F8F5') # Light green tint
+COLOR_TEXT_PRIMARY = colors.HexColor('#2C3E50')
+COLOR_TEXT_SECONDARY = colors.HexColor('#7F8C8D')
 
-    def footer(self):
-        self.set_y(-15)
-        font_to_use = self.custom_font if (self.lang_code == 'gu' and self.use_custom_font) else 'Arial'
-        self.set_font(font_to_use, 'I', 8)
-        
-        page_label = 'Page' if self.lang_code == 'en' else 'પાનું'
-        # Check chars
-        if font_to_use == 'Arial':
-           page_label = 'Page'
-           
-        self.cell(0, 10, f'{page_label} ' + str(self.page_no()) + '/{nb}', 0, 0, 'C')
+try:
+    pdfmetrics.registerFont(TTFont('Gujarati-Reg', FONT_REGULAR))
+    if os.path.exists(FONT_BOLD):
+        pdfmetrics.registerFont(TTFont('Gujarati-Bold', FONT_BOLD))
+    else:
+        pdfmetrics.registerFont(TTFont('Gujarati-Bold', FONT_REGULAR))
+    HAS_GUJARATI_FONT = True
+except Exception as e:
+    print(f"Font loading error: {e}")
+    HAS_GUJARATI_FONT = False
 
+# --- 3. GENERATOR FUNCTION ---
 def generate_farm_report(user_name, user_email, city, size, active_crops, live_data=None, lang_code='en', t=None):
     """
-    Generate a PDF report.
-    Tries to use Gujarati Unicode font.
-    If ANY error occurs, falls back to a Safe Mode (English/Arial) report.
+    Generate a PDF report using ReportLab with robust Gujarati support and Premium Theme.
     """
-    try:
-        return _generate_report_internal(user_name, user_email, city, size, active_crops, live_data, lang_code, t, safe_mode=False)
-    except Exception as e:
-        print(f"Primary PDF Generation Failed: {e}")
-        try:
-            # Fallback to Safe Mode
-            return _generate_report_internal(user_name, user_email, city, size, active_crops, live_data, lang_code='en', t=t, safe_mode=True)
-        except Exception as e2:
-             print(f"Safe Mode PDF Generation Failed: {e2}")
-             # Return valid empty bytes or minimal error PDF
-             pdf = FPDF()
-             pdf.add_page()
-             pdf.set_font("Arial", "", 12)
-             pdf.cell(0, 10, "Error generating report.")
-             return bytes(pdf.output())
-
-def _generate_report_internal(user_name, user_email, city, size, active_crops, live_data, lang_code, t, safe_mode=False):
-    if t is None: t = {}
+    buffer = BytesIO()
     
-    # If safe mode, force English and Arial
-    if safe_mode:
-        lang_code = 'en'
-
-    pdf = FarmReport(lang_code=lang_code)
-    # If safe mode, disable custom font usage manually
-    if safe_mode:
-        pdf.use_custom_font = False
-        pdf.custom_font = 'Arial'
-
-    pdf.alias_nb_pages()
-    pdf.add_page()
+    # Create margins that respect the header/footer
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=A4, 
+        rightMargin=20*mm, 
+        leftMargin=20*mm, 
+        topMargin=35*mm, 
+        bottomMargin=25*mm
+    )
     
-    # helper for localized text
-    def put_text(text, font_size=10, style='', ln=1, align='L', fill=0):
-        if not text: text = ""
+    # Styles
+    styles = getSampleStyleSheet()
+    font_reg = 'Gujarati-Reg' if HAS_GUJARATI_FONT else 'Helvetica'
+    font_bold = 'Gujarati-Bold' if HAS_GUJARATI_FONT else 'Helvetica-Bold'
+    
+    # --- INTERNAL HEADER/FOOTER (Accesses translation 't') ---
+    def header_footer(canvas, doc):
+        """Draws the graphical header and footer on every page"""
+        canvas.saveState()
+        w, h = A4
         
-        # Determine font
-        has_gujarati = any('\u0a80' <= c <= '\u0aff' for c in text)
-        font = pdf.custom_font if (pdf.use_custom_font and (has_gujarati or lang_code == 'gu')) else 'Arial'
+        # --- HEADER ---
+        # Draw Green Top Bar
+        canvas.setFillColor(COLOR_PRIMARY)
+        canvas.rect(0, h - 25*mm, w, 25*mm, fill=1, stroke=0)
         
-        # If using Arial, we MUST clean the text
-        if font == 'Arial':
-            # Replace non-latin-1 characters with ?
-            text = str(text).encode('latin-1', 'replace').decode('latin-1')
-            
-        pdf.set_font(font, style, font_size)
-        pdf.cell(0, 7 if ln else 0, text, 0, ln, align, fill)
+        # Draw Title on Top Bar
+        canvas.setFont('Gujarati-Bold' if HAS_GUJARATI_FONT else 'Helvetica-Bold', 24)
+        canvas.setFillColor(colors.white)
+        # Assuming Brand "Krishi-Mitra AI" stays same or use app_title
+        app_title = t.get('app_title', 'KRISHI-MITRA AI')
+        canvas.drawString(20*mm, h - 17*mm, app_title)
+        
+        # Subtitle
+        canvas.setFont('Gujarati-Reg' if HAS_GUJARATI_FONT else 'Helvetica', 10)
+        canvas.setFillColor(colors.white)
+        sub = t.get('app_subtitle', 'Advanced Data-Driven Farming Assistant')
+        canvas.drawString(20*mm, h - 22*mm, sub)
+        
+        # --- FOOTER ---
+        # Draw Bottom Line
+        canvas.setStrokeColor(COLOR_PRIMARY)
+        canvas.setLineWidth(1)
+        canvas.line(20*mm, 15*mm, w - 20*mm, 15*mm)
+        
+        canvas.setFont(font_reg, 8)
+        canvas.setFillColor(colors.grey)
+        gen_text = f"{t.get('generated_by', 'Generated by Krishi-Mitra AI')} | {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        canvas.drawString(20*mm, 10*mm, gen_text)
+        canvas.drawRightString(w - 20*mm, 10*mm, f"Page {doc.page}")
+        
+        canvas.restoreState()
 
-    # User Profile Section
-    put_text(t.get('farm_profile_label', 'Farm Profile'), font_size=12, style='B')
+    # Custom Paragraph Styles
+    style_normal = ParagraphStyle(
+        'ThemeNormal',
+        parent=styles['Normal'],
+        fontName=font_reg,
+        fontSize=10,
+        leading=14,
+        textColor=COLOR_TEXT_PRIMARY
+    )
     
-    lbl_name = 'Farmer Name' if lang_code == 'en' else 'ખેડૂતનું નામ'
-    lbl_email = 'Email' if lang_code == 'en' else 'ઇમેઇલ'
-    lbl_loc = t.get('location', 'Location')
-    lbl_size = t.get('farm_size', 'Farm Size')
-    lbl_gen = 'Generated On' if lang_code == 'en' else 'રિપોર્ટ તારીખ'
+    style_label = ParagraphStyle(
+        'ThemeLabel',
+        parent=styles['Normal'],
+        fontName=font_bold,
+        fontSize=10,
+        leading=14,
+        textColor=colors.HexColor('#555555')
+    )
     
-    put_text(f"{lbl_name}: {user_name}", font_size=10)
-    put_text(f"{lbl_email}: {user_email}", font_size=10)
-    put_text(f"{lbl_loc}: {city}", font_size=10)
-    put_text(f"{lbl_size}: {size} Acres", font_size=10)
-    put_text(f"{lbl_gen}: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", font_size=10)
-    pdf.ln(5)
+    style_section_head = ParagraphStyle(
+        'ThemeHeading',
+        parent=styles['Heading2'],
+        fontName=font_bold,
+        fontSize=14,
+        leading=18,
+        spaceAfter=10,
+        spaceBefore=20,
+        textColor=COLOR_PRIMARY_DARK,
+        borderPadding=5,
+        borderWidth=0,
+        borderColor=COLOR_PRIMARY
+    )
     
-    # Live Environment Section
+    # Decoration: Add a green underline to headings using a Table trick or just keeping it simple first
+    # We will use visual spacing.
+    
+    elements = []
+    
+    # --- TITLE SECTION ---
+    # The main header is in the page template (background), so we start with report title
+    report_title = t.get('farm_report_title', 'FARM STATUS REPORT')
+    
+    elements.append(Paragraph(report_title, ParagraphStyle(
+        'ReportTitle', 
+        parent=styles['Heading1'], 
+        fontName=font_bold, 
+        fontSize=20, 
+        alignment=1, 
+        spaceAfter=20,
+        textColor=COLOR_TEXT_PRIMARY
+    )))
+    
+    # --- SECTION 1: FARMER PROFILE (Cards Layout) ---
+    elements.append(Paragraph(t.get('farm_profile_label', 'FARM PROFILE').upper(), style_section_head))
+    
+    # Define Data
+    fname_lbl = t.get('farmer_name', 'Farmer Name')
+    email_lbl = t.get('email', 'Email')
+    loc_lbl = t.get('location', 'Location')
+    size_lbl = t.get('farm_size', 'Farm Size')
+    
+    # Use a Table to create a "Card" look
+    # Row 1: Name & Email
+    # Row 2: Location & Size
+    prof_data = [
+        [
+            Paragraph(f"<b>{fname_lbl}</b><br/>{user_name}", style_normal),
+            Paragraph(f"<b>{email_lbl}</b><br/>{user_email}", style_normal)
+        ],
+        [
+             Paragraph(f"<b>{loc_lbl}</b><br/>{city}", style_normal),
+             Paragraph(f"<b>{size_lbl}</b><br/>{size} Acres", style_normal)
+        ]
+    ]
+    
+    t_prof = Table(prof_data, colWidths=[90*mm, 80*mm])
+    t_prof.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('GRID', (0,0), (-1,-1), 1, colors.white), # Hide grid with white
+        ('BACKGROUND', (0,0), (-1,-1), COLOR_ACCENT_BG),
+        ('ROUNDEDCORNERS', [10, 10, 10, 10]), # Not supported in standard ReportLab Table, but background helps
+        ('LEFTPADDING', (0,0), (-1,-1), 12),
+        ('RIGHTPADDING', (0,0), (-1,-1), 12),
+        ('TOPPADDING', (0,0), (-1,-1), 12),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 12),
+        # Add spacing between rows?
+        ('BOTTOMPADDING', (0,0), (-1,0), 6),
+    ]))
+    elements.append(t_prof)
+    
+    # --- SECTION 2: LIVE ENVIRONMENT ---
     if live_data:
-        put_text(t.get('micro_climate', 'Micro-Climate'), font_size=12, style='B')
-        
+        elements.append(Paragraph(t.get('micro_climate', 'LIVE ENVIRONMENT').upper(), style_section_head))
         w = live_data.get('weather', {})
         s = live_data.get('soil', {})
         
-        lbl_temp = t.get('temperature', 'Temperature')
-        lbl_hum = t.get('humidity', 'Humidity')
-        lbl_soil_m = t.get('soil_moisture', 'Soil Moisture')
+        temp_val = f"{w.get('temp', '--')} C" # Using C to be safe
+        hum_val = f"{w.get('humidity', '--')}%"
+        soil_m_val = f"{s.get('moisture', '--')}%"
         
-        # Avoid ° symbol to eliminate encoding issues, use "C"
-        temp_val = f"{w.get('temp', '--')} C"
+        # 3 col layout
+        env_data = [[
+            Paragraph(f"<b>{t.get('temperature', 'Temperature')}</b><br/><font size=14 color='#2ECC71'>{temp_val}</font>", style_normal),
+            Paragraph(f"<b>{t.get('humidity', 'Humidity')}</b><br/><font size=14 color='#3498DB'>{hum_val}</font>", style_normal),
+            Paragraph(f"<b>{t.get('soil_moisture', 'Soil Moisture')}</b><br/><font size=14 color='#D35400'>{soil_m_val}</font>", style_normal)
+        ]]
         
-        put_text(f"{lbl_temp}: {temp_val} | {lbl_hum}: {w.get('humidity', '--')}%", font_size=10)
-        pdf.ln(5)
+        t_env = Table(env_data, colWidths=[56*mm, 56*mm, 56*mm])
+        t_env.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke),
+            ('BOX', (0,0), (-1,-1), 0.5, colors.lightgrey),
+            ('PADDING', (0,0), (-1,-1), 10),
+        ]))
+        elements.append(t_env)
 
-    # Active Crops Section
-    put_text(t.get('active_crop_fields', 'Active Crop Fields'), font_size=12, style='B')
-    pdf.ln(2)
+    # --- SECTION 3: CROP STATUS (The Main Table) ---
+    elements.append(Paragraph(t.get('active_crop_fields', 'ACTIVE CROPS').upper(), style_section_head))
+    elements.append(Spacer(1, 5))
     
     if not active_crops:
-        put_text(t.get('no_crops_added', 'No active crops registered.'), font_size=10, style='I')
+        elements.append(Paragraph(f"<i>{t.get('no_crops_added', 'No active crops registered.')}</i>", style_normal))
     else:
-        # Table Header
-        header_font = pdf.custom_font if (pdf.use_custom_font and lang_code == 'gu') else 'Arial'
-        pdf.set_font(header_font, 'B' if lang_code == 'en' else '', 10)
-        pdf.set_fill_color(240, 240, 240)
+        # Headers
+        headers = [
+            t.get('crop_name_label', 'Crop').upper(),
+            t.get('area_label', 'Area').upper(),
+            t.get('planting_date', 'Sown').upper(),
+            t.get('health', 'Status').upper()
+        ]
         
-        # Clean headers if Arial
-        def h_txt(txt):
-             if header_font == 'Arial': return txt.encode('latin-1', 'replace').decode('latin-1')
-             return txt
-             
-        pdf.cell(50, 8, h_txt(t.get('crop_name_label', 'Crop Name')), 1, 0, 'C', 1)
-        pdf.cell(30, 8, h_txt(t.get('area_label', 'Area (Ac)')), 1, 0, 'C', 1)
-        pdf.cell(35, 8, h_txt(t.get('planting_date', 'Planting Date')), 1, 0, 'C', 1)
-        pdf.cell(35, 8, h_txt(t.get('chlorophyll', 'Chlorophyll')), 1, 0, 'C', 1)
-        pdf.cell(40, 8, h_txt('Health' if lang_code == 'en' else 'સ્વાસ્થ્ય'), 1, 1, 'C', 1)
+        data_rows = []
+        # Header Row
+        data_rows.append([Paragraph(f"<b>{h}</b>", ParagraphStyle('THead', fontName=font_bold, textColor=colors.white, alignment=1)) for h in headers])
         
-        # Table Body
-        for crop in active_crops:
-            c_name = str(crop['crop_name'])
+        for i, crop in enumerate(active_crops):
+            c_name = str(crop.get('crop_name',''))
+            c_area = str(crop.get('area','')) + " Ac"
+            c_date = str(crop.get('planting_date',''))
+            c_health = str(crop.get('health_status', 'N/A'))
             
-            # Cell 1: Name
-            # Determine font for this specific cell based on content
-            f = pdf.custom_font if (pdf.use_custom_font and any('\u0a80' <= c <= '\u0aff' for c in c_name)) else 'Arial'
+            # Colorize Health Status
+            health_color = "black"
+            if "Healthy" in c_health or "સ્વસ્થ" in c_health: health_color = "#2ECC71"
+            elif "Disease" in c_health or "રોગ" in c_health: health_color = "#E74C3C"
             
-            # If using Arial, clean the text to avoid Latin-1 error
-            c_txt_final = c_name
-            if f == 'Arial': 
-                c_txt_final = c_name.encode('latin-1', 'replace').decode('latin-1')
+            row = [
+                Paragraph(c_name, style_normal),
+                Paragraph(c_area, style_normal),
+                Paragraph(c_date, style_normal),
+                Paragraph(f"<font color='{health_color}'><b>{c_health}</b></font>", style_normal)
+            ]
+            data_rows.append(row)
             
-            pdf.set_font(f, '', 9)
-            pdf.cell(50, 8, c_txt_final, 1, 0, 'C')
+        t_crops = Table(data_rows, colWidths=[65*mm, 35*mm, 35*mm, 35*mm])
+        
+        # Zebra Striping
+        t_style = [
+            ('BACKGROUND', (0,0), (-1,0), COLOR_PRIMARY_DARK), # Header
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+            ('TOPPADDING', (0,0), (-1,-1), 8),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#dddddd')),
+        ]
+        
+        for i in range(1, len(data_rows)):
+            if i % 2 == 0:
+                bg_col = colors.whitesmoke
+            else:
+                bg_col = colors.white
+            t_style.append(('BACKGROUND', (0,i), (-1,i), bg_col))
             
-            # Cell 2: Area (Always Arial/Numeric)
-            pdf.set_font("Arial", '', 9)
-            pdf.cell(30, 8, str(crop['area']), 1, 0, 'C')
-            
-            # Cell 3: Date (Always Arial/Numeric)
-            pdf.cell(35, 8, str(crop['planting_date']), 1, 0, 'C')
-            
-            # Cell 4: Chlorophyll
-            pdf.cell(35, 8, str(crop.get('chlorophyll', 'N/A')), 1, 0, 'C')
-            
-            # Cell 5: Health (May contain Gujarati)
-            h_status = str(crop.get('health_status', 'N/A'))
-            f = pdf.custom_font if (pdf.use_custom_font and any('\u0a80' <= c <= '\u0aff' for c in h_status)) else 'Arial'
-            
-            h_txt_final = h_status
-            if f == 'Arial': 
-                h_txt_final = h_status.encode('latin-1', 'replace').decode('latin-1')
-                
-            pdf.set_font(f, '', 9)
-            pdf.cell(40, 8, h_txt_final, 1, 1, 'C')
+        t_crops.setStyle(TableStyle(t_style))
+        elements.append(t_crops)
+        
+    elements.append(Spacer(1, 40))
+    
+    # --- DISCLAIMER / OFFICIAL NOTE ---
+    note_style = ParagraphStyle('Note', parent=style_normal, fontSize=8, textColor=colors.grey, alignment=0)
+    elements.append(Paragraph("<b>NOTE:</b> This report is computer generated by Krishi-Mitra AI based on farm data inputs and real-time environment analysis. Predictions are estimates.", note_style))
 
-    # Footer Note
-    pdf.ln(10)
-    note = "Note: Generated by Krishi-Mitra AI."
-    if safe_mode:
-        note += " (Safe Mode)"
+    # Build Doc with Template
+    doc.build(elements, onFirstPage=header_footer, onLaterPages=header_footer)
     
-    pdf.set_font("Arial", 'I', 8)
-    pdf.multi_cell(0, 5, note)
-    
-    # Return as clean bytes
-    out = pdf.output()
-    if isinstance(out, str):
-        return out.encode('latin-1')
-    return bytes(out)
+    buffer.seek(0)
+    return buffer.getvalue()

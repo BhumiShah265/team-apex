@@ -30,6 +30,7 @@ from utils.auth_db import login_user, register_user, update_password, generate_o
 from utils.farm_db import init_farm_db, get_farm, save_farm, save_history_record, get_history_records, get_user_crops, save_user_crop, delete_user_crop
 from utils.email_utils import send_otp_email, send_alert_notification
 from utils.sms_utils import send_sms_otp
+from utils.pdf_gen import generate_farm_report
 
 
 # Initialize Farm DB
@@ -49,7 +50,10 @@ st.set_page_config(
 )
 
 # Avoid NameError if t is not yet defined
-t = {}
+if 'language' not in st.session_state: st.session_state.language = 'en'
+from bhashini_layer import get_translations
+t = get_translations(st.session_state.language)
+st.session_state.t = t
 
 # ==========================================
 # 📍 LIVE GPS LOGIC (Integrated from gps.py)
@@ -62,47 +66,38 @@ def init_gps_from_component():
     now = datetime.datetime.now()
     last_check = st.session_state.get('last_gps_time', datetime.datetime.min)
     
-    # 1. Wait at least 5 mins (300s) between browser GPS pulses
-    if (now - last_check).total_seconds() < 300:
+    # 1. Wait at least 5 mins (300s) between browser GPS pulses if browser lock exists
+    if (now - last_check).total_seconds() < 300 and st.session_state.get('location_source') == 'browser':
         return
 
     # 2. Pulse detection (Render the component)
-    loc = get_geolocation(component_key=f"get_loc_{now.minute}") 
+    # Use a stable key to prevent re-mounting reruns
+    loc = get_geolocation(component_key="krishi_gps_sensor") 
     
-    # STRICT MODE: If we don't have browser coords, we WAIT.
-    if not loc or 'coords' not in loc:
-        # Check if we already have a saved location from a previous run to avoid flickering
-        if st.session_state.get('auto_lat'):
-            return
-
-        # If we have absolutely no location, BLOCK the app
-        c1, c2 = st.columns([1, 20])
-        with c1: st.spinner("Acquiring GPS...")
-        with c2: st.info(t.get("waiting_gps", "📍 Waiting for location permission... Please allow access to continue."))
-        st.stop()
-
-    # If we get here, we have coords
-    lat = float(loc['coords']['latitude'])
-    lon = float(loc['coords']['longitude'])
-    source = 'browser'
-    st.session_state['last_gps_time'] = now
-
-    # Update state only if changed and valid
-    if st.session_state.get('auto_lat') != lat or st.session_state.get('auto_lon') != lon:
-        st.session_state['auto_lat'] = lat
-        st.session_state['auto_lon'] = lon
-        st.session_state['location_source'] = source
-        st.session_state['location_locked'] = True
+    # 3. Handle data
+    if loc and 'coords' in loc:
+        lat = float(loc['coords']['latitude'])
+        lon = float(loc['coords']['longitude'])
         
-        from data_utils import get_nearest_city
-        found_city = get_nearest_city(lat, lon)
-        st.session_state['auto_city'] = found_city
-        st.session_state.live_data = None 
-        st.rerun()
+        # Only update and rerun if values actually changed significantly
+        if (st.session_state.get('auto_lat') != lat or 
+            st.session_state.get('auto_lon') != lon):
+            
+            st.session_state['auto_lat'] = lat
+            st.session_state['auto_lon'] = lon
+            st.session_state['location_source'] = 'browser'
+            st.session_state['location_locked'] = True
+            st.session_state['last_gps_time'] = now
+            
+            from data_utils import get_nearest_city
+            st.session_state['auto_city'] = get_nearest_city(lat, lon)
+            st.session_state.live_data = None 
+            st.rerun()
 
-# RUN THE LOGIC
+    # Silent background acquisition - no st.info or st.stop
+    # Rest of the app renders immediately with placeholders if no GPS yet
+
 # RUN THE LOGIC - Optimization: Skip GPS check if keeping a modal open is the priority
-# This prevents the "GPS lag" when trying to just open the Login/Signup page
 if not (st.session_state.get("show_login_modal") or 
         st.session_state.get("show_signup_modal") or 
         st.session_state.get("show_profile_modal") or
@@ -486,10 +481,10 @@ if "language" not in st.session_state: st.session_state.language = "en"
 st.session_state.setdefault("location_locked", False)
 st.session_state.setdefault("location_source", "default")
 st.session_state.setdefault("last_gps_time", datetime.datetime.min)
-if st.session_state.get("auto_city") is None: st.session_state["auto_city"] = "Rajkot" 
-if st.session_state.get("auto_lat") is None: st.session_state["auto_lat"] = 22.3039
-if st.session_state.get("auto_lon") is None: st.session_state["auto_lon"] = 70.8022
-if st.session_state.get("location_source") is None: st.session_state["location_source"] = "default"
+if st.session_state.get("auto_city") is None: st.session_state["auto_city"] = None 
+if st.session_state.get("auto_lat") is None: st.session_state["auto_lat"] = None
+if st.session_state.get("auto_lon") is None: st.session_state["auto_lon"] = None
+if st.session_state.get("location_source") is None: st.session_state["location_source"] = None
 # This flag will be set to True if any modal is opened in this run.
 # This is to prevent the location permission dialog from opening at the same time.
 _modal_open_in_this_run = False
@@ -575,7 +570,7 @@ if 'location_locked' not in st.session_state: st.session_state.location_locked =
 def update_translations():
     st.session_state.t = get_translations(st.session_state.language)
 
-update_translations()
+# update_translations() removed here as it's now done at the top if needed
 
 
 
@@ -583,6 +578,7 @@ update_translations()
 
 
 def get_live_data_for_city(city_name, lat=None, lon=None):
+    if not city_name and not lat: return None
     try:
         live_data = get_live_field_data(city_name, lat, lon)
         st.session_state.live_data = live_data
@@ -603,11 +599,8 @@ def get_effective_city():
     if st.session_state.get("location_locked"):
         return st.session_state.get("auto_city")
 
-    # 4. Fallback to Auto-Detected (even if not locked)
-    if st.session_state.get("auto_city"):
-        return st.session_state.get("auto_city")
-    
-    return "Rajkot" # Fixed fallback
+    # 4. Fallback: None (User must set manually or allow GPS)
+    return None
 
 selected_city = get_effective_city()
 
@@ -699,17 +692,18 @@ with col_profile:
         """, unsafe_allow_html=True)
 
     # --- THE POPOVER ---
+    # --- THE POPOVER ---
     with st.popover("👤", use_container_width=False):
         if not st.session_state.user_profile.get("authenticated", False):
             # GUEST MENU
-            st.markdown("### Welcome Guest")
-            if st.button("Login", use_container_width=True): 
+            st.markdown(f"### {t.get('welcome_guest', 'Welcome Guest')}")
+            if st.button(t.get('btn_login', 'Login'), use_container_width=True): 
                 st.session_state.show_login_modal = True
                 st.rerun()
-            if st.button("Sign Up", use_container_width=True):
+            if st.button(t.get('btn_signup', 'Sign Up'), use_container_width=True):
                 st.session_state.show_signup_modal = True
                 st.rerun()
-            if st.button("Settings", use_container_width=True):
+            if st.button(t.get('btn_settings', 'Settings'), use_container_width=True):
                 st.session_state.show_settings_modal = True
                 st.rerun()
         else:
@@ -719,15 +713,15 @@ with col_profile:
             st.caption(prof.get('email'))
             st.divider()
             
-            if st.button("⚙️ Settings", use_container_width=True):
+            if st.button(f"⚙️ {t.get('btn_settings', 'Settings')}", use_container_width=True):
                 st.session_state.show_settings_modal = True
                 st.rerun()
                 
-            if st.button("👤 Edit Profile", use_container_width=True):
+            if st.button(f"👤 {t.get('btn_edit_profile', 'Edit Profile')}", use_container_width=True):
                 st.session_state.show_profile_modal = True
                 st.rerun()
                 
-            if st.button("🚪 Logout", type="primary", use_container_width=True):
+            if st.button(f"🚪 {t.get('btn_logout', 'Logout')}", type="primary", use_container_width=True):
                 st.session_state.user_profile = {"authenticated": False}
                 st.rerun()
 
@@ -744,7 +738,7 @@ tab_dash, tab_diag, tab_mandi, tab_chat, tab_farm, tab_hist = st.tabs([
 # Location Selector (Inline - appears when triggered)
 if st.session_state.get('show_city_selector', False):
     st.markdown("---")
-    st.markdown("### 📍 Change Your Location")
+    st.markdown(f"### 📍 {t.get('change_location', 'Change Your Location')}")
     
     # Show current location
     current_city = st.session_state.get('auto_city', 'Rajkot')
@@ -840,17 +834,17 @@ def profile_modal():
         st.image(f"data:image/png;base64,{profile['profile_pic']}", width=120)
         st.markdown('</div>', unsafe_allow_html=True)
     
-    st.markdown("**🔄 Change Profile Photo (Max 2MB)**")
-    new_profile_img = st.file_uploader("Upload new photo", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
+    st.markdown(f"**{t.get('change_photo_label', '🔄 Change Profile Photo (Max 2MB)')}**")
+    new_profile_img = st.file_uploader(t.get("upload_new_photo", "Upload new photo"), type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
     
     new_b64 = profile.get("profile_pic") # Default to old one
     if new_profile_img:
         if new_profile_img.size > 2 * 1024 * 1024:
-            st.error("❌ File too large.")
+            st.error(t.get("file_too_large", "❌ File too large."))
         else:
             import base64
             new_b64 = base64.b64encode(new_profile_img.getvalue()).decode()
-            st.success("Photo uploaded successfully!")
+            st.success(t.get("photo_uploaded", "Photo uploaded successfully!"))
 
     name = st.text_input(t.get("full_name", "Full Name"), value=profile.get("name") or "")
     phone = st.text_input(t.get("phone_number", "Phone Number"), value=profile.get("phone") or "")
@@ -867,7 +861,7 @@ def profile_modal():
         
     selected_city_val = st.selectbox(f"📍 {t.get('city', 'Select Location')}", all_cities, index=city_idx, format_func=fmt_city)
 
-    if st.button(t.get("save_profile", "Save Changes"), type="primary", use_container_width=True):
+    if st.button(t.get("save_changes", "Save Changes"), type="primary", use_container_width=True):
         # Update user profile with the new_b64 string
         success, msg = update_user_profile(profile["id"], name, profile["email"], phone, selected_city_val, profile_pic=new_b64)
         if success:
@@ -887,12 +881,12 @@ def profile_modal():
                 st.session_state.auto_lon = gps['lon']
                 get_live_data_for_city(selected_city_val, gps['lat'], gps['lon'])
                 
-            st.toast("Profile Updated!", icon="✅")
+            st.toast(t.get("profile_updated", "Profile Updated!"), icon="✅")
             st.rerun()
         else:
             st.error(msg)
 
-@st.dialog("Settings & Preferences")
+@st.dialog(t.get("settings_title", "Settings & Preferences"))
 def settings_modal():
     # --- Custom CSS for this modal only ---
     st.markdown("""
@@ -935,16 +929,16 @@ def settings_modal():
     </style>
     """, unsafe_allow_html=True)
 
-    st.markdown("### ⚙️ System Configuration")
-    st.markdown("<div style='margin-bottom: 20px; color: #64748B; font-size: 0.9rem;'>Manage your location source, farming preferences, and account settings.</div>", unsafe_allow_html=True)
+    st.markdown(f"### {t.get('system_config', '⚙️ System Configuration')}")
+    st.markdown(f"<div style='margin-bottom: 20px; color: #64748B; font-size: 0.9rem;'>{t.get('manage_settings', 'Manage your location source, farming preferences, and account settings.')}</div>", unsafe_allow_html=True)
     
     # --- 1. LANGUAGE SETTINGS ---
     with st.container(border=True):
-        st.markdown('<div class="settings-header">🌐 Language / ભાષા</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="settings-header">🌐 {t.get("language", "Language")} / ભાષા</div>', unsafe_allow_html=True)
         
         curr_lang_idx = 0 if st.session_state.language == 'en' else 1
         lang_selection = st.radio(
-            "Interface Language",
+            t.get("interface_language", "Interface Language"),
             ["English", "Gujarati (ગુજરાતી)"],
             index=curr_lang_idx,
             horizontal=True,
@@ -952,17 +946,16 @@ def settings_modal():
             label_visibility="collapsed"
         )
 
-    # --- 2. LOCATION SETTINGS ---
     with st.container(border=True):
-        st.markdown('<div class="settings-header">📍 Location Source</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="settings-header">{t.get("location_source", "📍 Location Source")}</div>', unsafe_allow_html=True)
         
         # Grid Layout for Toggle and Description
         loc_col1, loc_col2 = st.columns([0.8, 0.2])
         with loc_col1:
-            st.markdown("**Manual City Override**")
-            st.caption("Simulate the dashboard for a specific city instead of using your GPS or Profile location.")
+            st.markdown(f"**{t.get('manual_override', 'Manual City Override')}**")
+            st.caption(t.get("manual_override_desc", "Simulate the dashboard for a specific city instead of using your GPS or Profile location."))
         with loc_col2:
-            use_manual = st.toggle("Override", value=st.session_state.get("manual_city_override", False), label_visibility="collapsed")
+            use_manual = st.toggle(t.get("override", "Override"), value=st.session_state.get("manual_city_override", False), label_visibility="collapsed")
         
         st.session_state.manual_city_override = use_manual
         
@@ -975,51 +968,51 @@ def settings_modal():
             try: idx = all_cities.index(curr)
             except: idx = 0
             
-            st.markdown("**Select Simulation City**")
-            sel_city = st.selectbox("Choose City", all_cities, index=idx, key="manual_city_sel", label_visibility="collapsed")
+            st.markdown(f"**{t.get('select_simulation_city', 'Select Simulation City')}**")
+            sel_city = st.selectbox(t.get("choose_city", "Choose City"), all_cities, index=idx, key="manual_city_sel", label_visibility="collapsed")
             st.session_state.manual_city_selection = sel_city
-            st.info(f"Viewing data for: **{sel_city}** (Temporary)")
+            st.info(t.get("viewing_data_for", "Viewing data for: **{city}** (Temporary)").format(city=sel_city))
         else:
             # Permanent Profile Change UI
             if st.session_state.user_profile.get("authenticated"):
                 st.markdown("---")
-                st.markdown("**Primary Farm Location** (Updates Profile)")
+                st.markdown(f"**{t.get('primary_farm_location', 'Primary Farm Location')}** {t.get('updates_profile', '(Updates Profile)')}")
                 curr = st.session_state.user_profile.get("city", 'NOT_SET')
                 try: idx = all_cities.index(curr)
                 except: idx = 0
-                sel_city = st.selectbox("Profile City", all_cities, index=idx, key="prof_city_sel", label_visibility="collapsed")
+                sel_city = st.selectbox(t.get("profile_city", "Profile City"), all_cities, index=idx, key="prof_city_sel", label_visibility="collapsed")
                 st.session_state.temp_profile_city = sel_city
             else:
                 st.markdown("---")
-                st.caption("🔒 Login to set a permanent farm location.")
+                st.caption(t.get("login_permanent_location", "🔒 Login to set a permanent farm location."))
 
     # --- 2. CROP PREFERENCES ---
     with st.container(border=True):
-        st.markdown('<div class="settings-header">🌾 Crop Context</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="settings-header">{t.get("crop_context", "🌾 Crop Context")}</div>', unsafe_allow_html=True)
         
-        st.markdown("**Default Crop Preference**")
-        st.caption("Used for quick calculations in Mandi and Advisory.")
+        st.markdown(f"**{t.get('default_crop_pref', 'Default Crop Preference')}**")
+        st.caption(t.get("quick_calc_desc", "Used for quick calculations in Mandi and Advisory."))
         
         all_crops = get_all_crops()
         curr_crop = st.session_state.user_profile.get("preferred_crop", "Groundnut (HPS)")
         try: c_idx = all_crops.index(curr_crop)
         except: c_idx = 0
         
-        new_crop = st.selectbox("Preferred Crop", all_crops, index=c_idx, label_visibility="collapsed")
+        new_crop = st.selectbox(t.get("preferred_crop", "Preferred Crop"), all_crops, index=c_idx, label_visibility="collapsed")
 
     # --- 3. ALERTS (Visual Placeholder) ---
     with st.container(border=True):
-        st.markdown('<div class="settings-header">🔔 Notifications</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="settings-header">{t.get("notifications_title", "🔔 Notifications")}</div>', unsafe_allow_html=True)
         n_c1, n_c2 = st.columns(2)
         with n_c1:
-            st.toggle("Weather Alerts", value=st.session_state.user_profile.get("notifications", {}).get("weather", True), key="notif_w_toggle")
+            st.toggle(t.get("weather_alerts", "Weather Alerts"), value=st.session_state.user_profile.get("notifications", {}).get("weather", True), key="notif_w_toggle")
         with n_c2:
-            st.toggle("Mandi Trends", value=st.session_state.user_profile.get("notifications", {}).get("mandi", False), key="notif_m_toggle")
+            st.toggle(t.get("mandi_trends", "Mandi Trends"), value=st.session_state.user_profile.get("notifications", {}).get("mandi", False), key="notif_m_toggle")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
     # --- SAVE BUTTON ---
-    if st.button("Save & Apply Changes", type="primary", use_container_width=True):
+    if st.button(t.get("save_apply", "Save & Apply Changes"), type="primary", use_container_width=True):
         # 1. Update Language
         selected_code = "en" if lang_selection == "English" else "gu"
         if st.session_state.language != selected_code:
@@ -1029,35 +1022,42 @@ def settings_modal():
         # 2. Update Crop
         st.session_state.user_profile["preferred_crop"] = new_crop
         
-        # 3. Update Notifications in Session
-        if "notifications" not in st.session_state.user_profile:
-             st.session_state.user_profile["notifications"] = {}
-        st.session_state.user_profile["notifications"]["weather"] = st.session_state.notif_w_toggle
-        st.session_state.user_profile["notifications"]["mandi"] = st.session_state.notif_m_toggle
-
-        # 3. Update City (If not manual override)
-        if not use_manual and st.session_state.user_profile.get("authenticated"):
-            from utils.auth_db import update_user_profile
-            prof = st.session_state.user_profile
-            # Use the temp selected city from the dropdown above
-            new_city_val = st.session_state.get("temp_profile_city", prof.get("city", "NOT_SET"))
-            
-            # Update DB
-            update_user_profile(prof["id"], prof["name"], prof["email"], prof.get("phone",""), new_city_val)
-            st.session_state.user_profile["city"] = new_city_val
-            
-            # Reset Data to fetch for new city
-            st.session_state.live_data = None
-            
-        # 4. Update Preferences (Language & Crop) in DB
         if st.session_state.user_profile.get("authenticated"):
-            update_user_preferences(
-                st.session_state.user_profile["id"], 
-                st.session_state.language, 
-                new_crop
+            prof = st.session_state.user_profile
+            user_id = prof["id"]
+            
+            # 3. Process City Update (If not manual override)
+            if not use_manual:
+                new_city_val = st.session_state.get("temp_profile_city", prof.get("city", "NOT_SET"))
+                st.session_state.user_profile["city"] = new_city_val
+                st.session_state.live_data = None # Reset to fetch for new city
+            else:
+                new_city_val = prof.get("city", "NOT_SET")
+
+            # 4. Save EVERYTHING to DB in one go (or separate calls if needed, but we have the functions)
+            # Update Profile + Preferences
+            update_user_profile(
+                user_id, 
+                prof["name"], 
+                prof["email"], 
+                prof.get("phone",""), 
+                new_city_val,
+                language=st.session_state.language,
+                preferred_crop=new_crop
             )
             
-        st.toast("Settings Saved!", icon="✅")
+            # Update Notifications
+            update_user_notifications(
+                user_id, 
+                st.session_state.notif_w_toggle, 
+                st.session_state.notif_m_toggle
+            )
+            st.session_state.user_profile["notifications"] = {
+                "weather": st.session_state.notif_w_toggle,
+                "mandi": st.session_state.notif_m_toggle
+            }
+            
+        st.toast(t.get("settings_saved", "Settings Saved!"), icon="✅")
         st.session_state.show_settings_modal = False
         st.rerun()
 
@@ -1078,7 +1078,7 @@ def logout_modal():
                 "phone": "",
                 "notifications": {"weather": True, "mandi": False}
             }
-            st.success("Logged out successfully!")
+            st.success(t.get("logged_out_success", "Logged out successfully!"))
             st.rerun()
 
 @st.dialog(t.get("login", "Login"))
@@ -1092,7 +1092,7 @@ def login_modal():
     
     if submitted:
         if not email or not password:
-            st.error("Please enter both email and password")
+            st.error(t.get("provide_email_pass", "Please enter both email and password"))
         else:
             success, result = login_user(email, password)
             if success:
@@ -1116,7 +1116,7 @@ def login_modal():
                     st.session_state.language = result.get("language")
                     update_translations() # Refresh UI text
                 
-                st.toast(f"Welcome back, {result['name']}!", icon="👋")
+                st.toast(t.get("welcome_back", "Welcome back, {name}!").format(name=result['name']), icon="👋")
                 st.rerun()
             else:
                 st.error(result)
@@ -1146,12 +1146,12 @@ def forgot_password_modal():
                     st.session_state.reset_email = email
                     st.session_state.show_forgot_password_modal = False
                     st.session_state.show_reset_password_modal = True
-                    st.toast("OTP sent to your email!", icon="📧")
+                    st.toast(t.get("otp_sent", "OTP sent to your email!"), icon="📧")
                     st.rerun()
                 else:
                     st.error(msg)
             else:
-                st.error("Email not found in our records")
+                st.error(t.get("email_not_found", "Email not found in our records"))
 
 @st.dialog(t.get("verify_otp_title", "Verify OTP"))
 def reset_password_modal():
@@ -1164,16 +1164,16 @@ def reset_password_modal():
     
     if st.button(t.get("reset_password_btn", "Reset Password"), type="primary", use_container_width=True):
         if not otp or not new_password or not confirm_password:
-            st.error("All fields are required")
+            st.error(t.get("all_fields_required", "All fields are required"))
         elif new_password != confirm_password:
-            st.error("Passwords do not match")
+            st.error(t.get("passwords_not_match", "Passwords do not match"))
         else:
             valid_otp, otp_msg = verify_otp(st.session_state.reset_email, otp)
             if valid_otp:
                 success, msg = update_password(st.session_state.reset_email, new_password)
                 if success:
                     st.success(msg)
-                    if st.button("Go to Login"):
+                    if st.button(t.get("go_to_login", "Go to Login")):
                         st.session_state.show_reset_password_modal = False
                         st.session_state.show_login_modal = True
                         st.rerun()
@@ -1187,8 +1187,8 @@ def signup_modal():
     st.markdown(f"### {t.get('signup_title', 'Create Account')}")
     
     # --- Profile Photo Upload ---
-    st.markdown("**📸 Profile Photo (Max 2MB)**")
-    profile_img = st.file_uploader("Upload your photo", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
+    st.markdown(f"**📸 {t.get('profile_photo', 'Profile Photo')} (Max 2MB)**")
+    profile_img = st.file_uploader(t.get("upload_new_photo", "Upload your photo"), type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
     
     b64_img = None
     if profile_img:
@@ -1229,12 +1229,17 @@ def signup_modal():
     if submitted:
 
         if not name or not email or not password or not phone:
-            st.error("Please fill in all required fields.")
+            st.error(t.get("all_fields_required", "Please fill in all required fields."))
         else:
-            # Pass b64_img to your registration function
-            success, message = register_user(name, email, password, phone, selected_city_val, profile_pic=b64_img)
+            # Pass b64_img and language/crop to your registration function
+            success, message = register_user(
+                name, email, password, phone, selected_city_val, 
+                profile_pic=b64_img,
+                language=st.session_state.language,
+                preferred_crop='Groundnut' # Default or from session if available
+            )
             if success:
-                st.success("Account created! Please login.")
+                st.success(t.get("account_created_login", "Account created! Please login."))
                 st.session_state.show_signup_modal = False
                 st.session_state.show_login_modal = True
                 st.rerun()
@@ -1289,19 +1294,21 @@ with tab_dash:
         st.markdown(f"### {t.get('live_weather_soil', '☁️ Live Weather & Soil Data')}")
     with stat_col:
         # Subtle Location Status (Hidden in plain sight)
-        city_display = translate_dynamic(selected_city, st.session_state.language)
-        source = st.session_state.get('location_source', 'default')
+        city_display = translate_dynamic(selected_city, st.session_state.language) if selected_city else "__"
+        source = st.session_state.get('location_source', 'Searching')
         src_icon = "🛰️" if source == 'browser' else "📡"
         
         # Get coordinates and station for verification
-        lat_v = st.session_state.get('auto_lat', '--')
-        lon_v = st.session_state.get('auto_lon', '--')
+        lat_v = st.session_state.get('auto_lat')
+        lon_v = st.session_state.get('auto_lon')
+        lat_str = f"{lat_v:.4f}" if lat_v is not None else "--"
+        lon_str = f"{lon_v:.4f}" if lon_v is not None else "--"
         station = weather.get('api_source', 'Unknown')
         
         st.markdown(f"""
             <div style="text-align: right; opacity: 0.6; font-size: 0.8rem; line-height: 1.2;">
                 <div>{src_icon} {city_display} | {(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)).strftime('%H:%M')}</div>
-                <div style="font-size: 0.7rem;">Coords: {lat_v:.4f}, {lon_v:.4f} | Source: {station}</div>
+                <div style="font-size: 0.7rem;">Coords: {lat_str}, {lon_str} | Source: {station}</div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -2363,9 +2370,9 @@ with tab_farm:
         <div style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); 
         border-radius: 24px; padding: 5rem 2rem; text-align: center; margin: 2rem 0; backdrop-filter: blur(12px);">
             <div style="font-size: 4rem; margin-bottom: 2rem;">🔒</div>
-            <h2 style="color: #FFFFFF; font-weight: 800; letter-spacing: -1px;">{translate_dynamic('Login Required', st.session_state.language)}</h2>
+            <h2 style="color: #FFFFFF; font-weight: 800; letter-spacing: -1px;">{t.get('login_required_farm', 'Login Required')}</h2>
             <p style="color: #9CA3AF; font-size: 1.1rem; max-width: 450px; margin: 0 auto;">
-                {translate_dynamic('Access your live farm intelligence, AI health pulses, and planning tools by logging in.', st.session_state.language)}
+                {t.get('login_desc_farm', 'Access your live farm intelligence, AI health pulses, and planning tools by logging in.')}
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -2427,6 +2434,26 @@ with tab_farm:
                 </style>
                 """, unsafe_allow_html=True)
                 
+                # PDF Export Button (Above Add)
+                try:
+                    pdf_data = generate_farm_report(
+                        u_name, u_email, f_city, f_size, active_crops, 
+                        st.session_state.get('live_data'), 
+                        st.session_state.language, 
+                        t
+                    )
+                    st.download_button(
+                        label="📄 PDF",
+                        data=pdf_data,
+                        file_name=f"Farm_Report_{datetime.datetime.now().strftime('%Y%m%d')}.pdf",
+                        mime="application/pdf",
+                        key="btn_download_farm_pdf_main",
+                        use_container_width=True
+                    )
+                except Exception as e:
+                    # In case of error (e.g. font missing), we just pass or show nothing to avoid breaking UI
+                    pass 
+                
                 if st.button(t.get('add', 'Add'), key="register_toggle_btn", use_container_width=True, type="secondary"):
                     st.session_state.show_add_crop_form = True
                     if 'editing_crop_id' in st.session_state: del st.session_state['editing_crop_id']
@@ -2440,11 +2467,11 @@ with tab_farm:
             
             with st.container(border=True):
                 form_title = t.get('edit', 'Edit') if is_edit else t.get('register', 'Register')
-                st.markdown(f"<h4 style='color: #2ECC71;'>{form_title} {t.get('crop_name_label', 'Field')}</h4>", unsafe_allow_html=True)
+                st.markdown(f"<h4 style='color: #2ECC71;'>{form_title} {t.get('field_label', 'Field')}</h4>", unsafe_allow_html=True)
                 
                 # --- STEP 1: VISUAL LOCATION PICKER ---
-                st.markdown(f"**📍 {t.get('farm_location', 'Pinpoint Your Farm')}**")
-                st.caption("Click on the map to select your exact field. Satellite view helps identify boundaries.")
+                st.markdown(f"**📍 {t.get('pinpoint_farm', 'Pinpoint Your Farm')}**")
+                st.caption(t.get("map_instructions", "Click on the map to select your exact field. Satellite view helps identify boundaries."))
 
                 # Get center point (User's city or existing crop location)
                 if is_edit and edit_crop.get('lat'):
@@ -2567,9 +2594,9 @@ with tab_farm:
                 if map_data and map_data.get("last_clicked"):
                     final_lat = map_data["last_clicked"]["lat"]
                     final_lon = map_data["last_clicked"]["lng"]
-                    st.success(f"✅ Location Selected: {final_lat:.5f}, {final_lon:.5f}")
+                    st.success(t.get("location_selected", "✅ Location Selected: {lat}, {lon}").format(lat=round(final_lat, 5), lon=round(final_lon, 5)))
                 else:
-                    st.info("👆 Click your specific field on the map above.")
+                    st.info(t.get("click_field_instruction", "👆 Click your specific field on the map above."))
 
                 st.divider()
 
@@ -2593,7 +2620,7 @@ with tab_farm:
                     st.markdown(f"**{t.get('capture_crop_img', '📸 Health Scan (Camera/Upload)')}**")
                     tab_cam, tab_up = st.tabs(["📸 Camera", "📁 Upload"])
                     with tab_cam:
-                        f_cam = st.camera_input("Scan leaf for chlorophyll analysis")
+                        f_cam = st.camera_input(t.get("scan_leaf_chlorophyll", "Scan leaf for chlorophyll analysis"))
                         if f_cam: f_img = f_cam
                     with tab_up:
                         f_up = st.file_uploader(t.get("upload_img", "Upload Leaf Image"), type=["jpg", "jpeg", "png"], key="new_crop_img_up")
@@ -2602,7 +2629,7 @@ with tab_farm:
                 # --- STEP 4: SAVE ---
                 btn_col1, btn_col2 = st.columns(2)
                 with btn_col1:
-                    action_label = t.get("update", "Update") if is_edit else t.get("save_history", "Start Monitoring")
+                    action_label = t.get("update", "Update") if is_edit else t.get("start_monitoring", "Start Monitoring")
                     is_save = st.button(action_label, type="primary", use_container_width=True, key="new_crop_save")
                 with btn_col2:
                     if st.button(t.get("cancel", "Cancel"), use_container_width=True, key="new_crop_cancel"):
@@ -2636,13 +2663,13 @@ with tab_farm:
                                     "health": analysis.get('disease', 'Healthy')
                                 })
                                 if save_user_crop(user_id, crop_data):
-                                    st.success("Field registered at exact location!")
+                                    st.success(t.get("field_registered", "Field registered at exact location!"))
                                     st.session_state.show_add_crop_form = False
                                     st.rerun()
                         else:
                             # Allow saving without image too for pure location registration
                             if save_user_crop(user_id, crop_data):
-                                st.success("Field registered at exact location!")
+                                st.success(t.get("field_registered", "Field registered at exact location!"))
                                 st.session_state.show_add_crop_form = False
                                 st.rerun()
             if active_crops:
@@ -2697,10 +2724,10 @@ with tab_farm:
                     with m_col1:
                         st.markdown(f"""
                         <div style="background: rgba(255, 255, 255, 0.03); border-radius: 12px; padding: 12px; height: 100%;">
-                            <div style="color: #94A3B8; font-size: 0.75rem; margin-bottom: 8px;">{t.get('maturity', 'Growth Progress')}</div>
+                            <div style="color: #94A3B8; font-size: 0.75rem; margin-bottom: 8px;">{t.get('growth_progress', 'Growth Progress')}</div>
                             <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px;">
                                 <span style="font-size: 1.8rem; font-weight: 700; color: white;">{maturity_pct}%</span>
-                                <span style="font-size: 0.7rem; color: #94A3B8;">{days_passed} days</span>
+                                <span style="font-size: 0.7rem; color: #94A3B8;">{days_passed} {t.get('days', 'days')}</span>
                             </div>
                             <div class="maturity-bar" style="margin: 8px 0;">
                                 <div class="maturity-progress" style="width: {maturity_pct}%;"></div>
@@ -2716,14 +2743,14 @@ with tab_farm:
                          pulse_color = '#2ECC71' if c_health == 'Healthy' else '#E74C3C'
                          st.markdown(f"""
                         <div style="background: rgba(255, 255, 255, 0.03); border-radius: 12px; padding: 12px; height: 100%;">
-                            <div style="color: #94A3B8; font-size: 0.75rem; margin-bottom: 8px;">{t.get('ai_health_pulse', 'AI Health Scan')}</div>
+                            <div style="color: #94A3B8; font-size: 0.75rem; margin-bottom: 8px;">{t.get('ai_health_scan', 'AI Health Scan')}</div>
                             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
                                 <div class="health-pulse" style="background: {pulse_color}; box-shadow: 0 0 10px {pulse_color}; margin: 0;"></div>
                                 <div style="font-size: 1.2rem; font-weight: 700; color: {pulse_color};">{translate_dynamic(c_health, st.session_state.language)}</div>
                             </div>
                             <div style="font-size: 0.7rem; color: #64748B; line-height: 1.3;">
-                                Chlorophyll: <span style="color: #E2E8F0;">{translate_dynamic(c_chlorophyll, st.session_state.language)}</span><br>
-                                Based on recent leaf analysis.
+                                {t.get('chlorophyll', 'Chlorophyll')}: <span style="color: #E2E8F0;">{translate_dynamic(c_chlorophyll, st.session_state.language)}</span><br>
+                                {t.get('based_on_analysis', 'Based on recent leaf analysis.')}
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -2739,10 +2766,10 @@ with tab_farm:
                                 <div style="color: #94A3B8; font-size: 0.75rem; margin-bottom: 8px;">{t.get('micro_climate', 'Micro-Climate')}</div>
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                                     <span style="font-size: 1.8rem; font-weight: 700; color: white;">{temp}</span>
-                                    <span style="font-size: 0.8rem; color: #94A3B8;">{hum} Hum</span>
+                                    <span style="font-size: 0.8rem; color: #94A3B8;">{hum} {t.get('humidity', 'Hum')}</span>
                                 </div>
                                 <div style="font-size: 0.65rem; color: #2ECC71; text-align: right; margin-top: auto;">
-                                    ● LIVE SYNC
+                                    {t.get('live_sync', '● LIVE SYNC')}
                                 </div>
                             </div>
                             """, unsafe_allow_html=True)
@@ -2750,7 +2777,7 @@ with tab_farm:
                              st.markdown(f"""
                             <div style="background: rgba(255, 255, 255, 0.03); border-radius: 12px; padding: 12px; height: 100%; display: flex; align-items: center; justify-content: center; text-align: center;">
                                 <div style="color: #64748B; font-size: 0.7rem;">
-                                    Enable location for<br>micro-climate data.
+                                    {t.get('enable_loc_micro', 'Enable location for micro-climate data.')}
                                 </div>
                             </div>
                             """, unsafe_allow_html=True)

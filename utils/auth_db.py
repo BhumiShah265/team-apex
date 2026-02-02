@@ -408,7 +408,7 @@ def login_user(email: str, password: str) -> tuple:
         return False, f"Error: {str(e)}"
 
 
-def register_user(name: str, email: str, password: str, phone: str = "", city: str = "", notif_weather: int = 1, notif_mandi: int = 0, birthdate=None, photo=None, profile_pic: str = None) -> tuple:
+def register_user(name: str, email: str, password: str, phone: str = "", city: str = "", notif_weather: int = 1, notif_mandi: int = 0, birthdate=None, photo=None, profile_pic: str = None, language: str = 'en', preferred_crop: str = 'Groundnut') -> tuple:
     is_valid, errors = validate_password_policy(password)
     if not is_valid:
         return False, "Password requirements not met."
@@ -428,9 +428,9 @@ def register_user(name: str, email: str, password: str, phone: str = "", city: s
         
         hashed_password = hash_password(password)
         cursor.execute('''
-            INSERT INTO users (name, email, phone, city, notif_weather, notif_mandi, password_hash, birthdate, photo, profile_pic)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ''', (name, email.lower(), phone, city, notif_weather, notif_mandi, hashed_password, birthdate, photo, profile_pic))
+            INSERT INTO users (name, email, phone, city, notif_weather, notif_mandi, password_hash, birthdate, photo, profile_pic, language, preferred_crop)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (name, email.lower(), phone, city, notif_weather, notif_mandi, hashed_password, birthdate, photo, profile_pic, language, preferred_crop))
         
         conn.commit()
         conn.close()
@@ -439,15 +439,31 @@ def register_user(name: str, email: str, password: str, phone: str = "", city: s
         return False, f"Error: {str(e)}"
 
 
-def update_user_profile(user_id: int, name: str, email: str, phone: str = "", city: str = "", profile_pic: str = None) -> tuple:
+def update_user_profile(user_id: int, name: str, email: str, phone: str = "", city: str = "", profile_pic: str = None, language: str = None, preferred_crop: str = None) -> tuple:
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute('''
-            UPDATE users SET name=%s, email=%s, phone=%s, city=%s, profile_pic=%s
-            WHERE id=%s
-        ''', (name, email.lower(), phone, city, profile_pic, user_id))
+        # Dynamically build the update query based on provided fields
+        update_fields = ["name=%s", "email=%s", "phone=%s", "city=%s"]
+        params = [name, email.lower(), phone, city]
+        
+        if profile_pic is not None:
+            update_fields.append("profile_pic=%s")
+            params.append(profile_pic)
+        
+        if language is not None:
+            update_fields.append("language=%s")
+            params.append(language)
+            
+        if preferred_crop is not None:
+            update_fields.append("preferred_crop=%s")
+            params.append(preferred_crop)
+            
+        params.append(user_id)
+        query = f"UPDATE users SET {', '.join(update_fields)} WHERE id=%s"
+        
+        cursor.execute(query, tuple(params))
         
         conn.commit()
         conn.close()

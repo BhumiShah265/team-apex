@@ -1,4 +1,5 @@
 import streamlit as st
+from utils.pdf_gen import generate_all_reports_pdf
 
 def show():
     # Header Section
@@ -9,11 +10,11 @@ def show():
     st.markdown("### 🔍 Filter History", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
-        st.text_input("Search reports...", placeholder="e.g. Cotton, Groundnut, Heat Stress")
+        search_query = st.text_input("Search reports...", placeholder="e.g. Cotton, Groundnut, Heat Stress")
     with col2:
-        st.selectbox("Filter by Type", ["All Reports", "Diagnosis", "Market Search"])
+        filter_type = st.selectbox("Filter by Type", ["All Reports", "Diagnosis", "Market Search"])
     with col3:
-        st.selectbox("Sort by", ["Newest First", "Oldest First"])
+        sort_by = st.selectbox("Sort by", ["Newest First", "Oldest First"])
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -48,6 +49,7 @@ def show():
         }
     ]
 
+    # Display individual report cards
     for report in reports:
         st.markdown(f"""
             <div class="agri-card" style="margin-bottom: 1.5rem;">
@@ -67,7 +69,38 @@ def show():
                 </div>
             </div>
         """, unsafe_allow_html=True)
-        
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Single PDF Download Section for all reports
+    st.markdown("### 📄 Download All Reports", unsafe_allow_html=True)
+    st.markdown('<div class="agri-card" style="text-align: center; padding: 2rem;">', unsafe_allow_html=True)
+    
+    col_left, col_right = st.columns([2, 1])
+    with col_left:
+        st.markdown(f"""
+            <div style="text-align: left;">
+                <h3 style="margin-bottom: 0.5rem;">Download Complete Report History</h3>
+                <p style="color: var(--text-secondary); margin: 0;">Export all {len(reports)} reports to a single PDF document</p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with col_right:
+        if st.button("📄 Download All as PDF", key="download_all_pdf", use_container_width=True):
+            # Generate combined PDF for all reports
+            pdf_bytes = generate_all_reports_pdf(reports)
+            
+            # Create download button
+            st.download_button(
+                label="📥 Click to Download",
+                data=pdf_bytes,
+                file_name="krishimitra_report_history.pdf",
+                mime="application/pdf",
+                key="download_all_btn"
+            )
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
     from utils.components import footer_buttons
     footer_buttons()
 

@@ -101,3 +101,4 @@ psycopg2-binary
 streamlit-javascript
 streamlit-js-eval
 plotly==6.5.2
+reportlab==4.1.0
