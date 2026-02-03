@@ -2416,7 +2416,7 @@ with tab_farm:
         with btn_container:
             show_form = st.session_state.get('show_add_crop_form', False)
             if not show_form:
-                b1, b2 = st.columns([0.7, 0.3])
+                b1, b2 = st.columns([0.3, 0.1]) # Tighter grouping
                 with b1:
                     try:
                         pdf_data = generate_farm_report(u_name, u_email, f_city, f_size, active_crops, st.session_state.get('live_data'), st.session_state.language, t)
@@ -2426,7 +2426,7 @@ with tab_farm:
                             file_name=f"Farm_Report_{datetime.datetime.now().strftime('%Y%m%d')}.pdf",
                             mime="application/pdf",
                             key="btn_download_farm_pdf_main",
-                            use_container_width=True
+                            use_container_width=False # Reduced from True
                         )
                     except Exception: pass
                 with b2:
@@ -2815,7 +2815,7 @@ with tab_farm:
             with ana_c1:
                 st.markdown(f"""
                 <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 12px; padding: 16px; height: 100%;">
-                    <div style="color: #64748B; font-size: 0.8rem; margin-bottom: 4px;">Soil & Climate Match</div>
+                    <div style="color: #64748B; font-size: 0.8rem; margin-bottom: 4px;">{t.get('soil_climate_match', 'Soil & Climate Match')}</div>
                     <div style="font-size: 2.2rem; font-weight: 800; color: #10B981;">{cm['score']}%</div>
                     <div style="height: 6px; width: 100%; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 8px;">
                         <div style="height: 100%; width: {cm['score']}%; background: #10B981; border-radius: 3px;"></div>
@@ -2827,8 +2827,8 @@ with tab_farm:
                  st.markdown(f"""
                 <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 16px; height: 100%; text-align: center;">
                     <div style="font-size: 1.5rem;">💧</div>
-                    <div style="font-weight: 600; margin: 4px 0; color: #E2E8F0;">{cm['water']}</div>
-                    <div style="color: #64748B; font-size: 0.7rem;">Water Needs</div>
+                    <div style="font-weight: 600; margin: 4px 0; color: #E2E8F0;">{t.get(cm['water'].lower(), cm['water'])}</div>
+                    <div style="color: #64748B; font-size: 0.7rem;">{t.get('water_needs', 'Water Needs')}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -2836,8 +2836,8 @@ with tab_farm:
                  st.markdown(f"""
                 <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 16px; height: 100%; text-align: center;">
                     <div style="font-size: 1.5rem;">🧪</div>
-                    <div style="font-weight: 600; margin: 4px 0; color: #E2E8F0;">{cm['nitro']}</div>
-                    <div style="color: #64748B; font-size: 0.7rem;">Nitrogen</div>
+                    <div style="font-weight: 600; margin: 4px 0; color: #E2E8F0;">{t.get(cm['nitro'].lower(), cm['nitro'])}</div>
+                    <div style="color: #64748B; font-size: 0.7rem;">{t.get('nitrogen', 'Nitrogen')}</div>
                 </div>
                 """, unsafe_allow_html=True)
 

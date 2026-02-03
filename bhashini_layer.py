@@ -317,7 +317,13 @@ UI_TRANSLATIONS = {
         "all_fields_required": "All fields are required", "passwords_not_match": "Passwords do not match",
         "go_to_login": "Go to Login", "account_created_login": "Account created! Please login.",
         "logged_out_success": "Logged out successfully!", "welcome_back": "Welcome back, {name}!",
-        "days": "days", "profile_photo": "Profile Photo"
+        "days": "days", "profile_photo": "Profile Photo",
+        "download_pdf": "Download PDF",
+        "crop_analysis": "CROP COMPATIBILITY ANALYSIS",
+        "soil_climate_match": "Soil & Climate Match",
+        "water_needs": "Water Needs",
+        "nitrogen": "Nitrogen",
+        "high": "High", "medium": "Medium", "low": "Low"
     },
     "gu": {
         "app_title": "કૃષિ-મિત્ર AI", "app_subtitle": "ગુજરાત માટે આગામી પેઢીની કૃષિ બુદ્ધિમત્તા",
@@ -441,7 +447,13 @@ UI_TRANSLATIONS = {
         "all_fields_required": "બધી વિગતો ફરજિયાત છે", "passwords_not_match": "પાસવર્ડ મેચ થતા નથી",
         "go_to_login": "લોગિન પર જાઓ", "account_created_login": "એકાઉન્ટ બની ગયું છે! કૃપા કરીને લોગિન કરો.",
         "logged_out_success": "સફળતાપૂર્વક લોગ આઉટ થયા!", "welcome_back": "સ્વાગત છે, {name}!",
-        "days": "દિવસો", "profile_photo": "પ્રોફાઇલ ફોટો"
+        "days": "દિવસો", "profile_photo": "પ્રોફાઇલ ફોટો",
+        "download_pdf": "PDF ડાઉનલોડ કરો",
+        "crop_analysis": "પાક સુસંગતતા વિશ્લેષણ",
+        "soil_climate_match": "જમીન અને આબોહવા મેચ",
+        "water_needs": "પાણીની જરૂરિયાત",
+        "nitrogen": "નાઇટ્રોજન",
+        "high": "વધારે", "medium": "મધ્યમ", "low": "ઓછું"
     }
 }
 
